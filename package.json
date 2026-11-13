@@ -1,0 +1,12 @@
+{
+  "name": "cloneman",
+  "version": "1.0.0",
+  "description": "CLONEMAN — パックマンの世界で直線弾幕を撃つタイムループ・シューティング。クリアしたラウンドの自分がクローンとして参戦する。",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "serve": "python3 -m http.server 8000",
+    "test": "node tools/smoke.mjs"
+  }
+}

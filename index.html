@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="CLONEMAN（クローンマン）— パックマンの世界を疾走する新感覚タイムループ・シューティング。ラウンドをクリアするたび、過去の自分がクローンとして参戦する。" />
+<title>CLONEMAN | クローンマン — 過去の自分と共闘するタイムループ弾幕</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='88'>🟡</text></svg>" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header id="hud" aria-label="ゲーム情報">
+    <div class="hud-block hud-left">
+      <span class="hud-label">ROUND</span>
+      <span id="hud-round" class="hud-value neon-cyan">1</span>
+    </div>
+
+    <div class="hud-block hud-center">
+      <div id="logo-mini">CLONE<span>MAN</span></div>
+      <div class="hud-score-row">
+        <div class="hud-metric"><span class="hud-label">SCORE</span><span id="hud-score" class="hud-value">0</span></div>
+        <div class="hud-metric"><span class="hud-label">HI-SCORE</span><span id="hud-hi" class="hud-value hud-hi">0</span></div>
+        <div class="hud-metric"><span class="hud-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
+        <div class="hud-metric"><span class="hud-label">CLONES</span><span id="hud-clones" class="hud-value neon-green">0</span></div>
+      </div>
+    </div>
+
+    <div class="hud-block hud-right">
+      <span class="hud-label">LIVES</span>
+      <div id="hud-lives" aria-label="残機"></div>
+      <div id="hud-power" class="power-badge hidden">POWER!!</div>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="game" width="800" height="672" role="application" aria-label="CLONEMAN ゲーム画面"></canvas>
+
+    <div id="banner" class="hidden" aria-hidden="true">
+      <h2 id="banner-title">ROUND 1</h2>
+      <p id="banner-sub"></p>
+    </div>
+
+    <!-- ============ TITLE OVERLAY ============ -->
+    <div id="overlay-title" class="overlay">
+      <div class="title-panel">
+        <div class="title-badge">TIME-LOOP BARRAGE ACTION</div>
+        <h1 class="game-logo">CLONE<span>MAN</span></h1>
+        <p class="game-tagline">クローンマン — 過去の自分と、いまの自分で。</p>
+
+        <div class="howto">
+          <div class="howto-row">
+            <span class="key-cluster"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>
+            <span class="howto-text">迷路を移動（パックマン方式）</span>
+          </div>
+          <div class="howto-row">
+            <span class="key-cluster"><kbd>SPACE</kbd> / <kbd>Z</kbd> / <kbd>J</kbd></span>
+            <span class="howto-text">直線に弾幕を発射（押しっぱなしで連射）</span>
+          </div>
+          <div class="howto-row">
+            <span class="key-cluster"><kbd>P</kbd> / <kbd>ESC</kbd></span>
+            <span class="howto-text">一時停止</span>
+          </div>
+          <div class="howto-row">
+            <span class="key-cluster"><kbd>M</kbd></span>
+            <span class="howto-text">サウンド ON / OFF</span>
+          </div>
+        </div>
+
+        <ul class="rules">
+          <li><b class="c-yellow">敵を全滅</b>させるとラウンドクリア — 壊れた地形と敵がリセットされ、次のラウンドへ</li>
+          <li>クリアしたラウンドの<b class="c-cyan">自分がクローンとして同じ動きを再現</b>し、弾も撃ってくれる</li>
+          <li>クローンは<b class="c-green">味方</b>：お互いにダメージなし・敵にも倒されない（フレンドリーファイアなし）</li>
+          <li>ラウンドが上がるごとに<b class="c-pink">敵が強く・多くなる</b>。橙のひびブロックは弾で破壊可能</li>
+          <li>大きな<b class="c-green">パワーペレット</b>で一定時間パワーアップ（連射＆弾が巨大化・敵は逃げ惑う）</li>
+        </ul>
+
+        <button id="btn-start" class="btn-neon">GAME START</button>
+        <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
+      </div>
+    </div>
+
+    <!-- ============ GAME OVER OVERLAY ============ -->
+    <div id="overlay-over" class="overlay hidden">
+      <div class="title-panel over-panel">
+        <h1 class="game-logo over-logo">GAME<span> OVER</span></h1>
+        <p class="game-tagline">時は止まった。でもクローンたちは走り続ける。</p>
+        <div class="final-stats">
+          <div class="final-stat"><span class="hud-label">SCORE</span><span id="final-score" class="final-value">0</span></div>
+          <div class="final-stat"><span class="hud-label">REACHED</span><span class="final-value">ROUND <span id="final-round">1</span></span></div>
+          <div class="final-stat"><span class="hud-label">BEST</span><span id="final-best" class="final-value neon-cyan">0</span></div>
+        </div>
+        <button id="btn-restart" class="btn-neon">RETRY — もう一度</button>
+        <p class="title-hi">ENTER キーでもリトライできます</p>
+      </div>
+    </div>
+
+    <!-- ============ PAUSE OVERLAY ============ -->
+    <div id="overlay-pause" class="overlay hidden">
+      <div class="pause-panel">
+        <h2>PAUSED</h2>
+        <p><kbd>P</kbd> / <kbd>ESC</kbd> で再開</p>
+      </div>
+    </div>
+
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+  </main>
+
+  <footer id="controls-bar">
+    <span class="ctrl"><kbd>←↑↓→</kbd> 移動</span>
+    <span class="ctrl"><kbd>SPACE</kbd> 弾幕発射</span>
+    <span class="ctrl"><kbd>P</kbd> ポーズ</span>
+    <span class="ctrl"><kbd>M</kbd> ミュート</span>
+    <span class="ctrl ctrl-clone">CLONES = クリアしたラウンドの自分が再演</span>
+  </footer>
+</div>
+
+<script type="module" src="js/game.js"></script>
+</body>
+</html>
