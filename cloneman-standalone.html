@@ -1102,8 +1102,22 @@ function roundConfig(n) {
   for (let i = 0; i < tanks; i++) list.push('tank');
   const shooters = n >= 4 ? Math.min(n - 3, 3) : 0;
   for (let i = 0; i < shooters; i++) list.push('shooter');
-  // cap and interleave for variety
-  while (list.length > 14) list.splice(list.lastIndexOf('chaser'), 1);
+  const phantoms = n >= 4 ? Math.min(n - 3, 2) : 0;
+  for (let i = 0; i < phantoms; i++) list.push('phantom');
+  const warpList = n >= 5 ? Math.min(n - 4, 3) : 0;
+  for (let i = 0; i < warpList; i++) list.push('warp');
+  const splitters = n >= 5 ? Math.min(n - 4, 2) : 0;
+  for (let i = 0; i < splitters; i++) list.push('splitter');
+  const healers = n >= 6 ? Math.min(n - 5, 2) : 0;
+  for (let i = 0; i < healers; i++) list.push('healer');
+  // cap and interleave for variety (trim weakest first, specials survive)
+  while (list.length > 16) {
+    let i = list.lastIndexOf('chaser');
+    if (i !== -1) { list.splice(i, 1); continue; }
+    i = list.lastIndexOf('speedy');
+    if (i !== -1) { list.splice(i, 1); continue; }
+    list.pop();
+  }
   // seeded-ish shuffle: keep it mixed but deterministic per round
   let seed = n * 9301 + 49297;
   const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
@@ -1121,6 +1135,11 @@ function enemyStats(type, round) {
     case 'speedy':  return { hp: 1 + Math.floor((round - 1) / 4), speed: 121 * s, score: 150, r: 10.5, color: '#ff7ad9', name: 'スピーディ' };
     case 'tank':    return { hp: 3 + Math.floor(round / 2),       speed: 60 * s,  score: 300, r: 13, color: '#3fa9ff', name: 'タンク' };
     case 'shooter': return { hp: 2 + Math.floor((round - 1) / 3), speed: 84 * s,  score: 200, r: 11, color: '#c07bff', name: 'シューター' };
+    case 'phantom': return { hp: 1 + Math.floor((round - 1) / 4), speed: 97 * s,  score: 150, r: 10.5, color: '#35f0c8', name: 'フェントム' };
+    case 'splitter':return { hp: 2 + Math.floor((round - 1) / 4), speed: 78 * s,  score: 200, r: 11.5, color: '#9dff2e', name: 'スプリッター' };
+    case 'snitch':  return { hp: 1,                              speed: 135 * s, score: 50,  r: 8,    color: '#d2ff7d', name: 'スニッチ' };
+    case 'warp':    return { hp: 1 + Math.floor((round - 1) / 4), speed: 88 * s,  score: 250, r: 11,   color: '#c17bff', name: 'ワープ' };
+    case 'healer':  return { hp: 2 + Math.floor((round - 1) / 3), speed: 70 * s,  score: 300, r: 11,   color: '#6bffb0', name: 'ヒーラー' };
     default:        return { hp: 1, speed: 90, score: 100, r: 11, color: '#ff4a3d', name: 'チェイサー' };
   }
 }
@@ -1488,6 +1507,24 @@ function damageEnemy(e, dmg, hitX, hitY) {
     burst(e.x, e.y, e.type === 'tank' ? 22 : 14, e.color, e.type === 'tank' ? 230 : 175);
     audio.enemyDie();
     if (e.type === 'tank') state.shakeT = Math.max(state.shakeT, 0.22);
+    if (e.type === 'splitter') {
+      // split into two fast snitches
+      for (const side of [-1, 1]) {
+        const s = enemyStats('snitch', state.round);
+        state.enemies.push({
+          type: 'snitch',
+          x: e.x + side * 14, y: e.y,
+          vx: 0, vy: 0,
+          dir: { x: side, y: 0 },
+          speed: s.speed, hp: s.hp, maxHp: s.hp,
+          r: s.r, color: s.color, score: s.score, name: s.name,
+          flashT: 0.15, thinkT: Math.random() * 0.2, fireCd: 2, graceT: 0.35,
+          dead: false, blocked: false,
+        });
+      }
+      addPopup(e.x, e.y - 18, '分裂!!', '#9dff2e', 15);
+      burst(e.x, e.y, 18, '#9dff2e', 200);
+    }
     e.dead = true;
     saveHi();
   } else {
@@ -1914,7 +1951,42 @@ function spawnEnemy(type) {
     graceT: 0.7,
     dead: false,
     blocked: false,
+    teleCd: type === 'warp' ? 2 + Math.random() * 2.2 : 0,
+    healCd: type === 'healer' ? 2.2 : 0,
+    healT: 0,
+    phaseCd: type === 'phantom' ? 1.2 + Math.random() * 1.6 : 0,
+    invisibleT: 0,
   });
+}
+
+// Warp: vanish and reappear near the prey (never inside walls)
+function findTeleportSpot() {
+  const p = state.player;
+  for (let i = 0; i < 48; i++) {
+    const tx = Math.floor(Math.random() * COLS), ty = Math.floor(Math.random() * ROWS);
+    if (moveSolid(tx, ty)) continue;
+    const cxp = tileCX(tx), cyp = tileCY(ty);
+    const d = dist(cxp, cyp, p.x, p.y) / TILE;
+    if (d >= 2.5 && d <= 7.5) return { x: cxp, y: cyp };
+  }
+  return null;
+}
+
+// Healer: mend nearby allies, making it the priority target
+function healBurst(e) {
+  let healed = 0;
+  for (const o of state.enemies) {
+    if (o === e || o.dead) continue;
+    if (dist(e.x, e.y, o.x, o.y) < TILE * 2.6 && o.hp < o.maxHp) {
+      o.hp += 1;
+      o.flashT = Math.max(o.flashT, 0.18);
+      healed++;
+      burst(o.x, o.y, 4, '#6bffb0', 90);
+    }
+  }
+  if (healed > 0) addPopup(e.x, e.y - 16, `+${healed} 回復`, '#6bffb0', 13);
+  e.healT = 0.6;
+  e.healCd = healed > 0 ? 3.2 : 1.6;
 }
 
 function chooseGhostDir(e) {
@@ -1996,8 +2068,36 @@ function updateEnemies(dt) {
   for (const e of state.enemies) {
     e.flashT = Math.max(0, e.flashT - dt);
     e.graceT = Math.max(0, e.graceT - dt);
+    e.healT = Math.max(0, (e.healT || 0) - dt);
     e.thinkT -= dt;
     e.fireCd -= dt;
+
+    // type-specific talents
+    if (e.type === 'warp') {
+      e.teleCd -= dt;
+      if (e.teleCd <= 0) {
+        e.teleCd = 4.2 + Math.random() * 1.6;
+        const spot = findTeleportSpot();
+        if (spot) {
+          burst(e.x, e.y, 12, '#c17bff', 170);
+          e.x = spot.x; e.y = spot.y;
+          e.graceT = Math.max(e.graceT, 0.5);
+          e.thinkT = 0;
+          burst(e.x, e.y, 14, '#c17bff', 190);
+          audio.power();
+        }
+      }
+    } else if (e.type === 'healer') {
+      e.healCd -= dt;
+      if (e.healCd <= 0) healBurst(e);
+    } else if (e.type === 'phantom') {
+      if (e.invisibleT > 0) {
+        e.invisibleT -= dt;
+      } else {
+        e.phaseCd -= dt;
+        if (e.phaseCd <= 0) { e.invisibleT = 1.5; e.phaseCd = 4.6; }
+      }
+    }
 
     const tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
     const nearCenter = Math.abs(e.x - tileCX(tx)) < 7 && Math.abs(e.y - tileCY(ty)) < 7;
@@ -2612,10 +2712,12 @@ function drawGhost(g, e, t) {
   if (frightened) color = '#2438ff';
   if (e.flashT > 0) color = '#ffffff';
   const spawnScale = e.graceT > 0 ? 0.6 + 0.4 * (1 - e.graceT / 0.7) : 1;
+  const phantomFade = e.type === 'phantom' && e.invisibleT > 0;
 
   g.save();
   g.translate(e.x, e.y);
   g.scale(spawnScale, spawnScale);
+  if (phantomFade) g.globalAlpha = 0.13;
   g.shadowColor = color;
   g.shadowBlur = 12;
   g.fillStyle = color;
@@ -2642,6 +2744,7 @@ function drawGhost(g, e, t) {
   g.save();
   g.translate(e.x, e.y);
   g.scale(spawnScale, spawnScale);
+  if (phantomFade) g.globalAlpha = 0.13;
   if (frightened) {
     // scared face: pale dots + wavy mouth
     g.fillStyle = '#ffd9c9';
@@ -2669,6 +2772,32 @@ function drawGhost(g, e, t) {
       g.arc(side * r * 0.38 + lookX, -r * 0.12 + lookY, r * 0.13, 0, Math.PI * 2);
       g.fill();
     }
+  }
+  // type-specific body glyphs
+  if (e.type === 'splitter') {
+    g.fillStyle = 'rgba(12,44,8,0.9)';
+    for (const dx of [-r * 0.42, 0, r * 0.42]) {
+      g.beginPath(); g.arc(dx, r * 0.3, 1.7, 0, Math.PI * 2); g.fill();
+    }
+  } else if (e.type === 'warp') {
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 1.6;
+    g.beginPath(); g.arc(0, r * 0.3, 3.6, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, r * 0.3, 1.3, 0, Math.PI * 2); g.stroke();
+  } else if (e.type === 'healer') {
+    g.strokeStyle = 'rgba(255,255,255,0.92)';
+    g.lineWidth = 1.8;
+    g.beginPath();
+    g.moveTo(-3.4, r * 0.3); g.lineTo(3.4, r * 0.3);
+    g.moveTo(0, r * 0.3 - 3.4); g.lineTo(0, r * 0.3 + 3.4);
+    g.stroke();
+  }
+  // healer channel ring
+  if ((e.healT || 0) > 0) {
+    g.globalAlpha = 0.7 * (e.healT / 0.6);
+    g.strokeStyle = '#6bffb0';
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(0, 0, r + 6, 0, Math.PI * 2); g.stroke();
   }
   // tank: hp pips above
   if (e.type === 'tank' && e.maxHp > 1) {

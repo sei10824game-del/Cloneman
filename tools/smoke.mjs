@@ -417,6 +417,84 @@ assert(state.clones.length === 1 && state.clones[0].rl, 'copyme clone is an alwa
 }
 
 console.log('');
+console.log('— expanded enemy roster —');
+window.__cloneman.startGame('player');
+step(110);
+state.player.invT = 9999;
+state.enemies.length = 0; state.spawnQueue.length = 0;
+
+// roster check: round 6 fields all new types
+window.__cloneman.setupRound(6);
+const roster = state.spawnQueue.map(q => q.type);
+assert(roster.includes('warp'), 'round 6 roster includes Warp');
+assert(roster.includes('phantom'), 'round 6 roster includes Phantom');
+assert(roster.includes('splitter'), 'round 6 roster includes Splitter');
+assert(roster.includes('healer'), 'round 6 roster includes Healer');
+
+// round 1 stays classic
+window.__cloneman.setupRound(1);
+assert(!state.spawnQueue.some(q => ['warp', 'phantom', 'splitter', 'healer'].includes(q.type)), 'round 1 stays classic chasers-only');
+step(110);
+state.player.invT = 9999;
+state.enemies.length = 0; state.spawnQueue.length = 0;
+
+// splitter splits into two snitches on death
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  // guarantee a clean shooting lane: carve walls & destructibles on row 8, tiles 7..11
+  for (let tx = 7; tx <= 11; tx++) {
+    const i = idxC(tx, 8);
+    state.grid.walls[i] = 0;
+    state.grid.destruct.delete(i);
+    state.grid.pellets[i] = 0;
+  }
+  const sp = { ...makeChaser(11 * TI + 16, 8 * TI + 16, 'splitter-test'), type: 'splitter', speed: 0, hp: 2, maxHp: 2, thinkT: 999, fireCd: 999 };
+  state.enemies.push(sp);
+  state.player.x = 7 * TI + 16; state.player.y = sp.y; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 };
+  const before = state.enemies.length;
+  // Pac-Man-style movement never stops on its own — pin the shooter in place
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = sp.y; };
+  const stepPin = (n) => { for (let i = 0; i < n; i++) { pin(); step(1); } };
+  pin();
+  press('Space'); stepPin(1); release('Space');
+  stepPin(60); // first shot lands
+  press('Space'); stepPin(1); release('Space');
+  stepPin(90); // second shot lands → death → split
+  const snitches = state.enemies.filter(e => e.type === 'snitch').length;
+  assert(state.enemies.length - before >= 1, 'splitter died and snitches replaced it');
+  assert(snitches === 2, `splitter split into two snitches (got ${snitches})`);
+}
+
+// warp teleports near the player
+{
+  const TI = 32;
+  const w = { ...makeChaser(6 * TI + 16, 6 * TI + 16, 'warp-test'), type: 'warp', speed: 0, teleCd: 0.3, graceT: 0 };
+  state.enemies.push(w);
+  const wx = w.x, wy = w.y;
+  step(60);
+  assert(Math.hypot(w.x - wx, w.y - wy) > TI, `warp teleported (${Math.round(Math.hypot(w.x - wx, w.y - wy))}px away)`);
+}
+
+// healer mends a damaged ally nearby
+{
+  const TI = 32;
+  const h = { ...makeChaser(6 * TI + 16, 10 * TI + 16, 'healer-test'), type: 'healer', speed: 0, hp: 2, maxHp: 2, healCd: 0.2, thinkT: 999, fireCd: 999 };
+  const buddy = { ...makeChaser(7 * TI + 16, 10 * TI + 16, 'buddy-test'), hp: 1, maxHp: 3, thinkT: 999, fireCd: 999 };
+  state.enemies.push(h, buddy);
+  step(30);
+  assert(buddy.hp === 2, `healer restored an ally's HP to ${buddy.hp}`);
+}
+
+// phantom phase-cycles into invisibility
+{
+  const ph = { ...makeChaser(10 * TI + 16, 10 * TI + 16, 'phantom-test'), type: 'phantom', speed: 0, phaseCd: 0.2, invisibleT: 0, thinkT: 999, fireCd: 999 };
+  state.enemies.push(ph);
+  step(30);
+  assert(ph.invisibleT > 0, 'phantom turned invisible on its cycle');
+}
+
+console.log('');
 console.log('');
 if (failures > 0) {
   console.error(`SMOKE TEST FAILED: ${failures} assertion(s) failed`);
