@@ -53,6 +53,9 @@ python3 -m http.server 8000
 ```bash
 # npm 経由でも可（npx http-server）
 npm run start
+
+# ブラウザのキャッシュを無効化したい開発・プレビュー時はこちら
+python3 tools/nostore_server.py
 ```
 
 ## テスト
