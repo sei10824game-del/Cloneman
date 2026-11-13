@@ -571,24 +571,37 @@ function updateParticles(dt) {
 
 // ---------------------------------------------------------------- upgrades (permanent, saved)
 // Bought with gold in the shop. Persist across runs via localStorage.
+// Cost of the next level grows geometrically: base * growth^level (rounded to 50G).
 const UPGRADES = [
-  { id: 'lives',     name: '上限残機',       desc: 'スタート残機+1（購入時に今すぐ+1）', ghost: true,  max: 2, cost: [400, 650] },
-  { id: 'attack',    name: '攻撃力',         desc: '直射弾のダメージ+1',                 ghost: false, max: 3, cost: [350, 550, 800] },
-  { id: 'multishot', name: '同時発射',       desc: '一度に放つ弾+1（並走弾）',           ghost: false, max: 2, cost: [500, 900] },
-  { id: 'speed',     name: '移動速度',       desc: '移動速度+6%',                        ghost: true,  max: 2, cost: [250, 450] },
-  { id: 'gold',      name: 'ゴールド獲得',   desc: '獲得ゴールド+25%',                   ghost: true,  max: 2, cost: [300, 550] },
+  { id: 'lives',     name: '上限残機',     desc: 'スタート残機+1（購入時に今すぐ+1）',                    ghost: true,  max: 6,  base: 400, growth: 1.6,  icon: '♥' },
+  { id: 'attack',    name: '攻撃力',       desc: '直射弾のダメージ+1',                                    ghost: false, max: 10, base: 350, growth: 1.35, icon: '⚔' },
+  { id: 'multishot', name: '同時発射',     desc: '一度に放つ弾+1（並走弾）',                              ghost: false, max: 4,  base: 500, growth: 1.5,  icon: '∴' },
+  { id: 'speed',     name: '移動速度',     desc: '移動速度+6%',                                           ghost: true,  max: 8,  base: 250, growth: 1.3,  icon: '»' },
+  { id: 'gold',      name: 'ゴールド獲得', desc: '獲得ゴールド+25%',                                      ghost: true,  max: 8,  base: 300, growth: 1.3,  icon: 'G' },
+  { id: 'pierce',    name: '貫通弾',       desc: '弾が壁・壊せるブロック・敵を貫通（Lv=貫通できる回数）',  ghost: false, max: 4,  base: 600, growth: 1.6,  icon: '➶' },
+  { id: 'bspeed',    name: '弾速',         desc: '弾の速度+18%',                                          ghost: false, max: 6,  base: 250, growth: 1.35, icon: '≫' },
+  { id: 'bsize',     name: '弾サイズ',     desc: '弾のサイズ+20%（当たりやすさUP）',                      ghost: false, max: 5,  base: 250, growth: 1.4,  icon: '●' },
+  { id: 'crit',      name: 'クリティカル', desc: '10%/Lvの確率で3倍ダメージ',                             ghost: false, max: 5,  base: 400, growth: 1.45, icon: '✦' },
+  { id: 'magnet',    name: 'マグネット',   desc: 'ペレットを吸引（吸込半径+28px/Lv）',                    ghost: false, max: 5,  base: 300, growth: 1.4,  icon: '◉' },
+  { id: 'ptime',     name: '強化持続',     desc: 'パワーペレットの持続時間+1.5秒',                        ghost: false, max: 5,  base: 300, growth: 1.4,  icon: '⏱' },
 ];
-const DEFAULT_UPGRADES = () => ({ lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0 });
+const DEFAULT_UPGRADES = () => ({ lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0, pierce: 0, bspeed: 0, bsize: 0, crit: 0, magnet: 0, ptime: 0 });
 try { state.upgrades = { ...DEFAULT_UPGRADES(), ...(JSON.parse(localStorage.getItem('cloneman_upgrades') || '{}')) }; } catch { state.upgrades = DEFAULT_UPGRADES(); }
 function saveUpgrades() {
   try { localStorage.setItem('cloneman_upgrades', JSON.stringify(state.upgrades)); } catch { /* ignore */ }
 }
 const upg = (id) => (state.upgrades && state.upgrades[id]) || 0;
+const upgradeCost = (u, level) => Math.round((u.base * Math.pow(u.growth, level)) / 50) * 50;
 const playerSpeed = () => Math.round(168 * (1 + 0.06 * upg('speed')));
 const goldMult = () => 1 + 0.25 * upg('gold');
 const goldGainAmount = (amount) => Math.max(1, Math.round(amount * goldMult()));
 const bulletDamage = (power) => (power ? 2 : 1) + upg('attack');
 const shotCount = () => 1 + upg('multishot');
+const bulletSpeed = () => Math.round(430 * (1 + 0.18 * upg('bspeed')));
+const bulletSize = () => 1 + 0.2 * upg('bsize');
+const critChance = () => 0.1 * upg('crit');
+const magnetRadius = () => 26 + 28 * upg('magnet');
+const pelletPowerTime = () => 6 + 1.5 * upg('ptime');
 
 // ---------------------------------------------------------------- combat
 // Fires the whole parallel volley (1 + multishot bullets) along a straight line.
@@ -601,10 +614,12 @@ function fireVolley(x, y, dx, dy, power, from, hue) {
   else if (n === 2) offsets.push(-spacing / 2, spacing / 2);
   else for (let i = 0; i < n; i++) offsets.push((i - (n - 1) / 2) * spacing);
   for (const off of offsets) {
+    const spd = bulletSpeed();
     state.bullets.push({
       x: x + px * off, y: y + py * off,
-      vx: dx * 430, vy: dy * 430,
-      r: power ? 6 : 4.5, dmg: bulletDamage(power),
+      vx: dx * spd, vy: dy * spd,
+      r: (power ? 6 : 4.5) * bulletSize(), dmg: bulletDamage(power),
+      pierceLeft: upg('pierce'), pierced: null,
       from, hue, power, life: 2.2,
     });
   }
@@ -741,7 +756,7 @@ function updatePlayer(dt) {
   autoCenter(p, dt);
 
   const moving = p.dir.x !== 0 || p.dir.y !== 0;
-  const spd = state.powerT > 0 ? 196 : p.speed;
+  const spd = state.powerT > 0 ? Math.round(196 * (1 + 0.06 * upg('speed'))) : p.speed;
   p.vx = p.dir.x * spd;
   p.vy = p.dir.y * spd;
   p.blocked = false;
@@ -757,25 +772,19 @@ function updatePlayer(dt) {
   // auto-fire while held
   if (keys.shoot && p.shootCd <= 0) firePlayerBullet();
 
-  // eat pellets
-  const tx = clampTile(Math.floor(p.x / TILE), COLS), ty = clampTile(Math.floor(p.y / TILE), ROWS);
-  const pi = idx(tx, ty);
-  const pellet = state.grid.pellets[pi];
-  if (state.rec.stats) {
-    if (pellet === 1) state.rec.stats.pellets++;
-    else if (pellet === 2) state.rec.stats.power++;
-  }
-  if (pellet === 1) {
-    state.grid.pellets[pi] = 0;
-    state.score += 10;
-    audio.chomp();
-  } else if (pellet === 2) {
-    state.grid.pellets[pi] = 0;
-    state.score += 50;
-    state.powerT = 6;
-    audio.power();
-    addPopup(p.x, p.y - 14, 'POWER!!', '#7dff6b', 18);
-    burst(p.x, p.y, 10, '#7dff6b', 150);
+  // eat pellets (マグネット upgrade vacuums nearby ones in)
+  const mr = magnetRadius();
+  const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
+  const reach = Math.ceil(mr / TILE);
+  for (let ty2 = Math.max(0, pty - reach); ty2 <= Math.min(ROWS - 1, pty + reach); ty2++) {
+    for (let tx2 = Math.max(0, ptx - reach); tx2 <= Math.min(COLS - 1, ptx + reach); tx2++) {
+      const cx = tx2 * TILE + 16, cy = ty2 * TILE + 16;
+      if (Math.hypot(p.x - cx, p.y - cy) > mr) continue;
+      const pi2 = idx(tx2, ty2);
+      const pellet2 = state.grid.pellets[pi2];
+      if (!pellet2) continue;
+      eatPelletAt(pi2, pellet2, p);
+    }
   }
 
   if (state.score > state.hi) { state.hi = state.score; }
@@ -1055,7 +1064,7 @@ function updateRLClone(c, dt) {
   } else if (pellet === 2) {
     state.grid.pellets[pi] = 0;
     state.score += 50;
-    state.powerT = 6;
+    state.powerT = pelletPowerTime();
     if (state.rec.stats) state.rec.stats.power++;
     addPopup(c.x, c.y - 12, 'POWER!!', '#7dff6b', 15);
     audio.power();
@@ -1480,6 +1489,25 @@ function updatePacmans(dt) {
   state.pacmans = state.pacmans.filter(p2 => !p2.dead);
 }
 
+// Eat one pellet cell (player path — also reused by the マグネット vacuum).
+function eatPelletAt(pi, pellet, p) {
+  if (state.rec.stats) {
+    if (pellet === 1) state.rec.stats.pellets++;
+    else if (pellet === 2) state.rec.stats.power++;
+  }
+  state.grid.pellets[pi] = 0;
+  if (pellet === 1) {
+    state.score += 10;
+    audio.chomp();
+  } else if (pellet === 2) {
+    state.score += 50;
+    state.powerT = pelletPowerTime();
+    audio.power();
+    addPopup(p.x, p.y - 14, 'POWER!!', '#7dff6b', 18);
+    burst(p.x, p.y, 10, '#7dff6b', 150);
+  }
+}
+
 function updateBullets(dt) {
   // player & clone bullets
   for (const b of state.bullets) {
@@ -1489,14 +1517,23 @@ function updateBullets(dt) {
     const tx = Math.floor(b.x / TILE), ty = Math.floor(b.y / TILE);
     if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) { b.life = 0; continue; }
     if (isWall(tx, ty)) {
-      b.life = 0;
-      burst(b.x, b.y, 3, '#7de8ff', 90);
-      continue;
+      const wk = 'w' + tx + ',' + ty;
+      if (b.pierced && b.pierced.has(wk)) {
+        // still inside a wall this bullet already paid to pierce — fly on
+      } else if (b.pierceLeft > 0) {
+        b.pierceLeft--;
+        if (!b.pierced) b.pierced = new Set();
+        b.pierced.add(wk);
+      } else {
+        b.life = 0;
+        burst(b.x, b.y, 3, '#7de8ff', 90);
+        continue;
+      }
     }
     if (isDestruct(tx, ty)) {
-      // smash the block, restore next round
+      // smash the block, restore next round — a piercing bullet smashes straight through
       state.grid.destruct.delete(idx(tx, ty));
-      b.life = 0;
+      if (b.pierceLeft <= 0) b.life = 0;
       state.score += 25;
       addPopup(tx * TILE + 16, ty * TILE + 16, '+25', '#ffb84d', 12);
       burst(tx * TILE + 16, ty * TILE + 16, 12, '#ffb84d', 160);
@@ -1508,8 +1545,14 @@ function updateBullets(dt) {
     for (const e of state.enemies) {
       if (e.dead || e.graceT > 0.35) continue;
       if (dist(b.x, b.y, e.x, e.y) < b.r + e.r) {
-        b.life = 0;
-        damageEnemy(e, b.dmg, b.x, b.y);
+        if (b.pierced && b.pierced.has(e)) continue; // already pierced through this one
+        const crit = critChance() > 0 && Math.random() < critChance();
+        damageEnemy(e, crit ? b.dmg * 3 : b.dmg, b.x, b.y);
+        if (crit) addPopup(e.x, e.y - 14, 'CRIT!', '#ff8787', 15);
+        if (!b.pierced) b.pierced = new Set();
+        b.pierced.add(e);
+        if (b.pierceLeft > 0) b.pierceLeft--;
+        else b.life = 0;
         break;
       }
     }
@@ -2188,12 +2231,12 @@ function renderUpgrades() {
     if (ghost && !u.ghost) continue;
     const level = upg(u.id);
     const maxed = level >= u.max;
-    const cost = maxed ? 0 : u.cost[level];
+    const cost = maxed ? 0 : upgradeCost(u, level);
     const row = document.createElement('div');
     row.className = 'shop-row upg-row';
     const chip = document.createElement('div');
     chip.className = 'shop-chip upg';
-    chip.textContent = u.id === 'lives' ? '♥' : u.id === 'attack' ? '⚔' : u.id === 'multishot' ? '∴' : u.id === 'speed' ? '»' : 'G';
+    chip.textContent = u.icon || '▲';
     const info = document.createElement('div');
     info.className = 'shop-info';
     info.innerHTML =
@@ -2227,7 +2270,7 @@ function buyUpgrade(id) {
   if (!u) return;
   const level = upg(id);
   if (level >= u.max) return;
-  const cost = u.cost[level];
+  const cost = upgradeCost(u, level);
   if (state.gold < cost) return;
   state.gold -= cost;
   state.upgrades[id] = level + 1;
@@ -2238,6 +2281,42 @@ function buyUpgrade(id) {
   audio.power();
   renderShop();
   hudUpdate();
+}
+
+
+// ------------------------------------------- data reset (full wipe, no refund)
+function resetData() {
+  state.upgrades = DEFAULT_UPGRADES();
+  state.gold = 0;
+  saveGold();
+  saveUpgrades();
+  if (state.player) state.player.speed = playerSpeed();
+  renderShop();
+  hudUpdate();
+  showBanner('リセット完了', 'ゴールドと強化をすべて消去しました（返金なし）', 1.8);
+}
+
+const resetBtnEl = document.getElementById('reset-data-btn');
+let resetArmed = false, resetArmTimer = null;
+if (resetBtnEl) {
+  resetBtnEl.addEventListener('click', () => {
+    if (!resetArmed) {
+      resetArmed = true;
+      resetBtnEl.textContent = '本当にリセット？ もう一度押すと消去';
+      resetBtnEl.classList.add('armed');
+      resetArmTimer = setTimeout(() => {
+        resetArmed = false;
+        resetBtnEl.textContent = 'ゴールド＆強化をリセット';
+        resetBtnEl.classList.remove('armed');
+      }, 3500);
+      return;
+    }
+    clearTimeout(resetArmTimer);
+    resetArmed = false;
+    resetBtnEl.textContent = 'ゴールド＆強化をリセット';
+    resetBtnEl.classList.remove('armed');
+    resetData();
+  });
 }
 
 function renderShop() {
@@ -2424,4 +2503,4 @@ hudUpdate();
 requestAnimationFrame(frame);
 
 // debug / smoke-test handle (harmless in production; used by tools/smoke.mjs)
-window.__cloneman = { state, startGame, setupRound, togglePause, buyRL, buyUpgrade, toggleShop };
+window.__cloneman = { state, startGame, setupRound, togglePause, buyRL, buyUpgrade, toggleShop, resetData };

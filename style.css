@@ -549,3 +549,35 @@ kbd {
 .upg-btn:disabled { background: #26304f; color: #7f8db3; box-shadow: none; }
 .upg-btn.done { background: #3a3314; color: #ffd24a; }
 .upg-btn.poor { background: #3a2f14; color: #c9b267; }
+
+/* ---- upgrade reset (danger) ---- */
+.shop-reset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px dashed rgba(255, 120, 120, .35);
+  border-radius: 10px;
+}
+.reset-note { font-size: 10px; color: #b08080; letter-spacing: .04em; }
+.reset-data-btn {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: #ff9a9a;
+  background: rgba(255, 90, 90, .06);
+  border: 1px solid rgba(255, 120, 120, .4);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: all .18s ease;
+}
+.reset-data-btn:hover { background: rgba(255, 90, 90, .14); color: #ffc4c4; }
+.reset-data-btn.armed {
+  background: rgba(255, 70, 70, .28);
+  border-color: #ff6b6b;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(255, 90, 90, .45);
+}

@@ -518,7 +518,7 @@ step(60 * 5);
 assert(state.clones[0].lives === 2 && state.clones[0].maxLives === 2, 'clone inherited 2 lives');
 
 console.log('— shop upgrades: permanent character build —');
-state.upgrades = { lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0 };
+state.upgrades = { lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0, pierce: 0, bspeed: 0, bsize: 0, crit: 0, magnet: 0, ptime: 0 };
 try { globalThis.localStorage.removeItem('cloneman_upgrades'); } catch { /* ignore */ }
 window.__cloneman.startGame('player');
 step(110);
@@ -574,6 +574,109 @@ assert(state.upgrades.gold === 1 && state.gold === 0, 'gold upgrade purchased at
   press('Space'); stepPin(1); release('Space');
   stepPin(120);
   assert(state.gold === 5, `gold upgrade turns a kill into 5G (4G x 1.25, got ${state.gold}G)`);
+}
+
+// upgrade cost grows geometrically with level (multishot Lv2 = 750G)
+{
+  state.gold = 10000;
+  window.__cloneman.buyUpgrade('multishot'); // currently Lv1 -> cost 750
+  assert(state.upgrades.multishot === 2 && state.gold === 9250, `upgrade cost grows with level (Lv2 multishot costs 750G, gold=${state.gold})`);
+}
+
+// Park the firing lane: older sub-tests left enemies on row 8 — remove any that
+// could be blockers, and keep a bystander far off the lane so the round can't clear.
+const parkLane = () => {
+  state.enemies = state.enemies.filter(e => e.y < 6 * 32 || e.y > 10 * 32 || e.x > 14 * 32 || e.x < 6 * 32);
+  state.enemies.push({ ...makeChaser(3 * 32 + 16, 2 * 32 + 16, 'bystander'), speed: 0, thinkT: 999, fireCd: 999 });
+  state.bullets.length = 0;
+};
+
+// caps really are big now — multishot Lv4 fires a 5-way volley
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  for (let ty = 6; ty <= 10; ty++) for (let tx = 6; tx <= 14; tx++) { const i = idxC(tx, ty); state.grid.walls[i] = 0; state.grid.destruct.delete(i); state.grid.pellets[i] = 0; }
+  state.upgrades.multishot = 4;
+  state.upgrades.attack = 0;
+  state.player.shootCd = 0;
+  parkLane();
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = 8 * TI + 16; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 }; };
+  pin();
+  press('Space'); step(1); release('Space');
+  assert(state.bullets.length === 5, `multishot at max fires a 5-way volley (got ${state.bullets.length})`);
+  state.upgrades.multishot = 0;
+}
+
+// crit: pin the RNG low so every shot is a CRIT (3x damage)
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  for (let tx = 7; tx <= 13; tx++) { const i = idxC(tx, 8); state.grid.walls[i] = 0; state.grid.destruct.delete(i); state.grid.pellets[i] = 0; }
+  state.upgrades.attack = 0;
+  state.upgrades.crit = 1;
+  parkLane();
+  const tanky = { ...makeChaser(12 * TI + 16, 8 * TI + 16, 'crit-target'), hp: 5, maxHp: 5, speed: 0, thinkT: 999, fireCd: 999 };
+  state.enemies.push(tanky);
+  state.player.shootCd = 0;
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = tanky.y; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 }; };
+  pin();
+  const oldRand = Math.random;
+  Math.random = () => 0; // pin RNG through the hit (crit rolls at impact, not at fire)
+  press('Space'); step(1); release('Space');
+  let guard = 0;
+  while (tanky.hp === 5 && guard++ < 120) { pin(); step(1); }
+  Math.random = oldRand;
+  assert(tanky.hp === 2, `crit deals 3x damage (hp=${tanky.hp})`);
+  state.upgrades.crit = 0;
+}
+
+// pierce: a wall stops a normal shot, a pierce-1 bullet breaks through
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  for (let tx = 7; tx <= 13; tx++) { const i = idxC(tx, 8); state.grid.walls[i] = 0; state.grid.destruct.delete(i); state.grid.pellets[i] = 0; }
+  state.grid.walls[idxC(9, 8)] = 1;
+  state.upgrades.attack = 0;
+  state.upgrades.pierce = 0;
+  parkLane();
+  const tanky = { ...makeChaser(12 * TI + 16, 8 * TI + 16, 'pierce-target'), hp: 5, maxHp: 5, speed: 0, thinkT: 999, fireCd: 999 };
+  state.enemies.push(tanky);
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = tanky.y; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 }; };
+  pin();
+  state.player.shootCd = 0;
+  press('Space'); step(1); release('Space');
+  let guard = 0;
+  while (state.bullets.length && guard++ < 90) { pin(); step(1); }
+  assert(tanky.hp === 5, `without pierce, a wall eats the shot (hp=${tanky.hp})`);
+  state.upgrades.pierce = 1; // one pierce = one wall OR one enemy
+  pin();
+  state.player.shootCd = 0;
+  press('Space'); step(1); release('Space');
+  guard = 0;
+  while (tanky.hp === 5 && guard++ < 120) { pin(); step(1); }
+  assert(tanky.hp === 4, `piercing bullet crossed the wall and damaged the enemy behind it (hp=${tanky.hp})`);
+  state.upgrades.pierce = 2; // one for the enemy, one to fly through
+  pin();
+  state.player.shootCd = 0;
+  press('Space'); step(1); release('Space');
+  guard = 0;
+  const hpBefore = tanky.hp;
+  while (tanky.hp === hpBefore && guard++ < 120) { pin(); step(1); }
+  assert(tanky.hp === hpBefore - 1, 'piercing bullet kept flying and hit the enemy');
+  assert(state.bullets.length > 0, 'piercing bullet is still alive after flying through the enemy');
+  state.upgrades.pierce = 0;
+}
+
+// data reset wipes gold + upgrades without refund and persists
+{
+  state.gold = 1234;
+  state.upgrades.lives = 2;
+  state.upgrades.multishot = 3;
+  window.__cloneman.resetData();
+  assert(state.gold === 0, 'data reset wipes gold without refund');
+  assert(Object.values(state.upgrades).every(v => v === 0), 'data reset wipes every upgrade level');
+  const stored = JSON.parse(globalThis.localStorage.getItem('cloneman_upgrades') || '{}');
+  assert(Object.values(stored).every(v => !v), 'data reset persisted to localStorage');
 }
 
 console.log('');
