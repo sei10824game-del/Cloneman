@@ -58,6 +58,16 @@ npm run start
 python3 tools/nostore_server.py
 ```
 
+### プレビューURLが開けないときは
+
+`cloneman-standalone.html` — JS/CSSをすべて1ファイルにインライン化した**スタンドアロン版**です。
+サーバーもプレビューも不要で、**ダブルクリック（file://）だけで遊べます**。
+コードを変更した後は以下で再生成してください。
+
+```bash
+node tools/build-standalone.mjs && node tools/verify-standalone.mjs
+```
+
 ## テスト
 
 ```bash
