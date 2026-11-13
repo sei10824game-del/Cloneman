@@ -485,6 +485,44 @@ kbd {
 .ctrl-shop:hover { background: rgba(255, 210, 74, 0.18); box-shadow: 0 0 12px rgba(255, 210, 74, 0.3); }
 .ctrl-shop kbd { color: #ffd24a; border-color: rgba(255, 210, 74, 0.45); }
 
+/* ============ ENEMY MODE: 天敵ゴースト ============ */
+.c-red { color: #ff5a4e; text-shadow: 0 0 10px rgba(255, 90, 78, 0.55); }
+.enemy-mode-rules {
+  text-align: left;
+  background: rgba(46, 8, 22, 0.55);
+  border: 1px solid rgba(255, 110, 199, 0.35);
+  border-radius: 14px;
+  padding: 10px 12px 8px;
+  margin: 10px 0 14px;
+  box-shadow: inset 0 0 24px rgba(255, 60, 120, 0.09);
+}
+.enemy-mode-heading {
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 13px; letter-spacing: 0.14em; color: #ff8ad8;
+  text-shadow: 0 0 12px rgba(255, 110, 199, 0.6);
+  margin: 0 2px 6px;
+}
+.enemy-mode-rules .rules { margin: 0; }
+.enemy-mode-rules .rules li { font-size: 11.5px; }
+.mode-select {
+  display: flex; flex-direction: column; gap: 10px;
+  width: min(430px, 94vw); margin: 4px auto 0;
+}
+.mode-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 12px 18px; font-size: 17px; letter-spacing: 0.1em;
+}
+.mode-btn small {
+  font-family: inherit; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; opacity: 0.88; text-transform: none;
+}
+.mode-ghost {
+  background: linear-gradient(180deg, #ff6ec7, #b93bff);
+  box-shadow: 0 0 24px rgba(255, 110, 199, 0.45), 0 6px 0 #5b1c86;
+  color: #2b0733;
+}
+.mode-ghost:hover { box-shadow: 0 0 34px rgba(255, 110, 199, 0.7), 0 6px 0 #5b1c86; }
+
 </style>
 </head>
 <body>
@@ -501,7 +539,7 @@ kbd {
       <div class="hud-score-row">
         <div class="hud-metric"><span class="hud-label">SCORE</span><span id="hud-score" class="hud-value">0</span></div>
         <div class="hud-metric"><span class="hud-label">HI-SCORE</span><span id="hud-hi" class="hud-value hud-hi">0</span></div>
-        <div class="hud-metric"><span class="hud-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
+        <div class="hud-metric"><span class="hud-label" id="hud-enemies-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
         <div class="hud-metric"><span class="hud-label">CLONES</span><span id="hud-clones" class="hud-value neon-green">0</span></div>
         <div class="hud-metric"><span class="hud-label">GOLD</span><span id="hud-gold" class="hud-value neon-gold">0</span></div>
       </div>
@@ -563,7 +601,20 @@ kbd {
           <li>大きな<b class="c-green">パワーペレット</b>で一定時間パワーアップ（連射＆弾が巨大化・敵は逃げ惑う）</li>
         </ul>
 
-        <button id="btn-start" class="btn-neon">GAME START</button>
+        <div class="enemy-mode-rules">
+          <div class="enemy-mode-heading">👻 敵モード「天敵ゴースト」</div>
+          <ul class="rules">
+            <li>あなたは<b class="c-pink">赤い天敵ゴースト</b>（弾なし・触れるだけで撃破）。逃げ回る<b class="c-yellow">天才パックマン</b>を狩りに行け</li>
+            <li><b class="c-yellow">パックマンに触れた瞬間に撃破</b>。ただし<b class="c-green">パワーペレット（アイテム）使用中のパックマン</b>に触れると<b class="c-red">あなたがやられる</b></li>
+            <li><b class="c-red">死ぬたびにラウンドが進み</b>、<b class="c-cyan">前の自分がクローンとして出撃</b>する</li>
+            <li><b class="c-yellow">パックマンを倒すと次のラウンドでパックマンの数が+1される</b>（増え続ける天才たち）</li>
+          </ul>
+        </div>
+
+        <div class="mode-select">
+          <button id="btn-start" class="btn-neon mode-btn">プレイヤーモード<small>過去の自分と共闘する弾幕シューティング</small></button>
+          <button id="btn-ghost-mode" class="btn-neon mode-btn mode-ghost">敵モード — 天敵ゴースト<small>プログラムされた天才パックマンを狩る</small></button>
+        </div>
         <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
       </div>
     </div>
@@ -838,6 +889,8 @@ const CLONE_MAX_LIVES = 3;
 const RL_COST = 300;
 const GOLD_PER_CLEAR = (round) => 120 + 80 * (round - 1);
 const GOLD_PER_KILL = 4;
+const GOLD_PER_PACMAN = 200;
+const SCORE_PER_PACMAN = 1000;
 
 // ---------------------------------------------------------------- HUD refs
 const hud = {
@@ -847,6 +900,7 @@ const hud = {
   lives: document.getElementById('hud-lives'),
   clones: document.getElementById('hud-clones'),
   enemies: document.getElementById('hud-enemies'),
+  enemiesLabel: document.getElementById('hud-enemies-label'),
   gold: document.getElementById('hud-gold'),
   power: document.getElementById('hud-power'),
 };
@@ -869,6 +923,8 @@ const titleHi = document.getElementById('title-hi');
 // ---------------------------------------------------------------- state
 const state = {
   mode: 'title',       // 'title' | 'play' | 'clear' | 'over'
+  gameMode: 'player',  // 'player' | 'ghost'
+  pacCount: 1,         // enemy mode: Pac-Men this round (grows by 1 per defeated Pac-Man)
   paused: false,
   time: 0,
   round: 1,
@@ -879,6 +935,7 @@ const state = {
   player: null,
   clones: [],
   enemies: [],
+  pacmans: [],
   spawnQueue: [],
   bullets: [],
   ebullets: [],
@@ -894,6 +951,11 @@ const state = {
   shopOpen: false,
   distField: null,
   distFieldT: 0,
+  pelletField: null,
+  pelletFieldT: 0,
+  powerField: null,
+  pelletsLeft: 0,
+  powerPelletsLeft: 0,
 };
 
 try { state.hi = parseInt(localStorage.getItem('cloneman_hiscore') || '0', 10) || 0; } catch { state.hi = 0; }
@@ -964,6 +1026,46 @@ function computeDistField() {
     }
   }
   state.distField = d;
+}
+
+// ---------------------------------------------------------------- Pac-Man fields (enemy mode)
+// BFS distance from every pellet (and from every power pellet alone) so the
+// genius Pac-Man can always descend toward food — or bolt toward a power
+// pellet when the ghosts close in. Recomputed at most twice a second.
+function bfsFill(dist, queue) {
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const cx = cur % COLS, cy = Math.floor(cur / COLS);
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+      if (moveSolid(nx, ny)) continue;
+      const ni = idx(nx, ny);
+      if (dist[ni] !== -1) continue;
+      dist[ni] = dist[cur] + 1;
+      queue.push(ni);
+    }
+  }
+}
+
+function computePacmanFields() {
+  const food = new Int16Array(COLS * ROWS).fill(-1);
+  const pow = new Int16Array(COLS * ROWS).fill(-1);
+  const q = [], qw = [];
+  let pelletsLeft = 0, powerPelletsLeft = 0;
+  for (let i = 0; i < state.grid.pellets.length; i++) {
+    const v = state.grid.pellets[i];
+    if (v >= 1) { pelletsLeft++; food[i] = 0; q.push(i); }
+    if (v === 2) { powerPelletsLeft++; pow[i] = 0; qw.push(i); }
+  }
+  bfsFill(food, q);
+  bfsFill(pow, qw);
+  state.pelletField = food;
+  state.powerField = pow;
+  state.pelletsLeft = pelletsLeft;
+  state.powerPelletsLeft = powerPelletsLeft;
+  state.pelletFieldT = 0.5;
 }
 
 // ---------------------------------------------------------------- round setup
@@ -1039,31 +1141,49 @@ function setupRound(n) {
   };
 
   state.enemies = [];
+  state.pacmans = [];
   state.bullets = [];
   state.ebullets = [];
   state.powerT = 0;
   state.shakeT = 0;
 
-  // clones: one per cleared round, replaying the recorded run
+  // clones: one per recorded attempt, replaying the recorded run
   state.clones = [];
   state.recordings.forEach((rec, i) => {
     if (rec.frames.length > 0) state.clones.push(makeClone(rec, i));
   });
 
-  // enemies for this round, spawned from the ghost house over time
-  const comp = roundConfig(n);
-  state.spawnQueue = comp.map((type, i) => ({ type, delay: 0.6 + i * 0.7 }));
+  if (state.gameMode === 'ghost') {
+    // enemy mode: a genius Pac-Man (or several) stalks the maze — you are the ghost.
+    // deaths advance the round; defeating Pac-Man adds one more next round.
+    state.spawnQueue = Array.from({ length: state.pacCount }, (_, i) => ({ type: 'pacman', delay: 0.8 + i * 1.15 }));
+  } else {
+    // enemies for this round, spawned from the ghost house over time
+    const comp = roundConfig(n);
+    state.spawnQueue = comp.map((type, i) => ({ type, delay: 0.6 + i * 0.7 }));
+  }
 
   // fresh recording for this round
   state.rec = { frames: [], shots: [], deaths: [], stats: { pellets: 0, power: 0, kills: 0, deaths: 0 } };
   state.distField = null;
   state.distFieldT = 0;
+  state.pelletField = null;
+  state.pelletFieldT = 0;
+  state.pelletsLeft = 0;
+  state.powerPelletsLeft = 0;
 
   state.introT = 1.6;
   state.mode = 'play';
   state.paused = false;
 
-  if (n === 1) {
+  if (state.gameMode === 'ghost') {
+    if (n === 1) {
+      showBanner('天敵ゴースト', '天才パックマンを捕まえろ！ 触れれば撃破 — パワーペレット使用中は近づくな', 1.7);
+    } else {
+      showBanner(`ROUND ${n}`, `パックマン ×${state.pacCount} ／ クローン ×${state.clones.length} 参戦`, 1.5);
+      audio.cloneSpawn();
+    }
+  } else if (n === 1) {
     showBanner('ROUND 1', '敵をぜんぶ倒せ！ スペースで直線弾', 1.5);
   } else {
     showBanner(`ROUND ${n}`, `クローン ×${state.clones.length} 参戦！ 敵が強く・多くなる`, 1.5);
@@ -1072,7 +1192,9 @@ function setupRound(n) {
   hudUpdate();
 }
 
-function startGame() {
+function startGame(mode) {
+  state.gameMode = mode === 'ghost' ? 'ghost' : 'player';
+  state.pacCount = 1;
   state.score = 0;
   state.lives = 3;
   state.recordings = [];
@@ -1085,26 +1207,40 @@ function startGame() {
   setupRound(1);
 }
 
+// Store this round's replay so it can haunt later rounds as clones.
+// Death-attempts are recorded too (enemy mode needs them to advance).
+function pushRecording() {
+  if (state.rec && state.rec.frames.length > 0) {
+    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [], stats: state.rec.stats, mode: state.gameMode });
+    if (state.recordings.length > 12) state.recordings.shift();
+  }
+}
+
 function clearRound() {
   const bonus = 500 * state.round;
   const goldGain = GOLD_PER_CLEAR(state.round);
   state.score += bonus;
   state.gold += goldGain;
   saveGold();
-  // store this round's replay (cap 12 recordings; oldest drops off)
-  if (state.rec.frames.length > 0) {
-    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [], stats: state.rec.stats });
-    if (state.recordings.length > 12) state.recordings.shift();
-  }
+  pushRecording();
   state.bullets = [];
   state.ebullets = [];
   state.powerT = 0;
+  if (state.gameMode === 'ghost') {
+    state.pacCount += 1; // パックマンを倒したので、次のラウンドでパックマン+1
+    state.pacmans = [];
+  }
   state.mode = 'clear';
   state.clearT = 2.8;
   saveHi();
   audio.roundClear();
-  showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — このラウンドの自分がクローンになる`, 2.6);
-  burst(state.player.x, state.player.y, 26, '#ffd83d', 190);
+  if (state.gameMode === 'ghost') {
+    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — 次のラウンドはパックマン×${state.pacCount}体`, 2.6);
+    burst(state.player.x, state.player.y, 26, '#3ae2ff', 190);
+  } else {
+    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — このラウンドの自分がクローンになる`, 2.6);
+    burst(state.player.x, state.player.y, 26, '#ffd83d', 190);
+  }
   hudUpdate();
 }
 
@@ -1203,6 +1339,29 @@ function hitPlayer() {
     ...alive.map((t, i) => ({ type: t, delay: 0.9 + i * 0.55 })),
   ];
   hudUpdate();
+}
+
+// Enemy mode: a powered-up Pac-Man got the ghost — the failed attempt is
+// recorded as a clone, and THE ROUND ADVANCES. At zero lives it's game over.
+function hitGhostPlayer() {
+  const p = state.player;
+  if (p.invT > 0 || state.mode !== 'play') return;
+  if (state.rec && state.rec.deaths) state.rec.deaths.push(Math.max(0, state.rec.frames.length - 1));
+  if (state.rec && state.rec.stats) state.rec.stats.deaths++;
+  state.lives--;
+  audio.playerHit();
+  state.shakeT = Math.max(state.shakeT, 0.55);
+  burst(p.x, p.y, 22, '#3ae2ff', 220);
+  pushRecording(); // この死んだ自分がクローンとして次ラウンドに出撃
+
+  if (state.lives <= 0) {
+    burst(p.x, p.y, 42, '#ffd83d', 300);
+    hudUpdate();
+    gameOver();
+    return;
+  }
+  // 真仕様: 死ぬたびにラウンドが進み、前の自分がクローンとして生成される
+  setupRound(state.round + 1);
 }
 
 // ---------------------------------------------------------------- particles & popups
@@ -1390,6 +1549,29 @@ function updatePlayer(dt) {
   }
 
   if (state.score > state.hi) { state.hi = state.score; }
+}
+
+// Enemy mode: you play the natural nemesis — a crimson ghost that cannot
+// shoot, only hunt by touch. Movement rules are identical to Pac-Man's.
+function updateGhostPlayer(dt) {
+  const p = state.player;
+  p.shootCd = 0;
+  p.invT -= dt;
+
+  tryTurn(p, true);
+  autoCenter(p, dt);
+
+  const moving = p.dir.x !== 0 || p.dir.y !== 0;
+  p.vx = p.dir.x * p.speed;
+  p.vy = p.dir.y * p.speed;
+  p.blocked = false;
+  moveEntityAxis(p, dt);
+
+  if (moving) p.mouth += dt * 11;
+
+  if (state.rec.frames.length <= 60 * 60 * 6) {
+    state.rec.frames.push({ x: p.x, y: p.y, dx: p.dir.x, dy: p.dir.y, m: p.mouth, pow: false });
+  }
 }
 
 function updateClones(dt) {
@@ -1743,6 +1925,157 @@ function updateEnemies(dt) {
   state.enemies = state.enemies.filter(e => !e.dead);
 }
 
+// ================= genius Pac-Man (enemy mode) =================
+// The programmed Pac-Man is no pushover: it hoovers the maze via BFS food
+// fields, bolts for a power pellet when ghosts close in (and then hunts
+// THEM), and never voluntarily steps toward a ghost.
+function spawnPacman() {
+  state.pacmans.push({
+    type: 'pacman',
+    x: tileCX(12), y: tileCY(10),
+    vx: 0, vy: 0,
+    dir: { x: 0, y: -1 },
+    r: 11,
+    mouth: Math.random() * 6,
+    powerT: 0,
+    thinkT: 0,
+    graceT: 0.8,
+    dead: false,
+    blocked: false,
+  });
+}
+
+function choosePacmanDir(p) {
+  const { tx, ty } = tileOf(p);
+  const threats = state.distField; // multi-source BFS from every ghost (player + clones)
+  const here = threats ? threats[idx(tx, ty)] : -1;
+  const powered = p.powerT > 0;
+  // which food field to follow: powered → hunt ghosts, hunted → power pellet, otherwise pellets
+  let field = null;
+  if (powered) field = threats;
+  else if (here !== -1 && here < 5 && state.powerPelletsLeft > 0) field = state.powerField;
+  else if (state.pelletsLeft > 0) field = state.pelletField;
+
+  const candidates = [];
+  for (const [dx, dy] of DIRS) {
+    if (moveSolid(tx + dx, ty + dy)) continue;
+    const isReverse = dx === -p.dir.x && dy === -p.dir.y;
+    const d = field ? field[idx(tx + dx, ty + dy)] : -1;
+    candidates.push({ dx, dy, isReverse, d, score: 0 });
+  }
+  if (candidates.length === 0) return;
+  let pool = candidates.filter(c => !c.isReverse);
+  if (pool.length === 0) pool = candidates;
+
+  for (const c of pool) {
+    const danger = !powered && threats
+      ? (() => {
+          const td = threats[idx(tx + c.dx, ty + c.dy)];
+          return td !== -1 && td < 3 ? (3 - td) * 4 : 0;
+        })()
+      : 0;
+    c.score = (c.d === -1 ? 9999 : c.d) * 10 + danger + Math.random() * 2.2;
+  }
+  let best;
+  if (field) {
+    best = pool.reduce((a, b) => (b.score < a.score ? b : a));
+    const straight = pool.find(c => c.dx === p.dir.x && c.dy === p.dir.y);
+    if (straight && straight.score <= best.score + 1.5) best = straight; // prefer gliding straight
+  } else {
+    best = pool[Math.floor(Math.random() * pool.length)]; // maze cleared — wander
+  }
+  p.dir = { x: best.dx, y: best.dy };
+  const cx = tileCX(tx), cy = tileCY(ty);
+  if (best.dx !== 0) p.y += (cy - p.y) * 0.75; else p.x += (cx - p.x) * 0.75;
+}
+
+function killPacman(p) {
+  if (p.dead) return;
+  p.dead = true;
+  state.score += SCORE_PER_PACMAN;
+  state.gold += GOLD_PER_PACMAN;
+  if (state.rec && state.rec.stats) state.rec.stats.kills++;
+  saveGold();
+  addPopup(p.x, p.y, `+${SCORE_PER_PACMAN}`, '#ffe95a', 17);
+  addPopup(p.x, p.y - 16, `+${GOLD_PER_PACMAN}G`, '#ffd24a', 12);
+  burst(p.x, p.y, 26, '#ffd83d', 240);
+  audio.enemyDie();
+  saveHi();
+}
+
+function updatePacmans(dt) {
+  // staggered entrances from the ghost house
+  for (const q of state.spawnQueue) q.delay -= dt;
+  const ready = state.spawnQueue.filter(q => q.delay <= 0);
+  state.spawnQueue = state.spawnQueue.filter(q => q.delay > 0);
+  for (const q of ready) if (q.type === 'pacman') spawnPacman();
+
+  // BFS fields: ghost distance (for the genius brain) + food distance
+  state.distFieldT -= dt;
+  if (state.distFieldT <= 0 || !state.distField) {
+    state.distFieldT = 0.25;
+    computeDistField();
+  }
+  state.pelletFieldT -= dt;
+  if (state.pelletFieldT <= 0 || !state.pelletField) computePacmanFields();
+
+  const baseSpeed = Math.min(118 + state.round * 3, 152);
+  for (const m of state.pacmans) {
+    m.powerT = Math.max(0, m.powerT - dt);
+    m.graceT = Math.max(0, m.graceT - dt);
+    m.thinkT -= dt;
+    m.mouth += dt * 10;
+
+    const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
+    const nearCenter = Math.abs(m.x - tileCX(tx)) < 7 && Math.abs(m.y - tileCY(ty)) < 7;
+    if (nearCenter && m.thinkT <= 0) {
+      choosePacmanDir(m);
+      m.thinkT = 0.13 + Math.random() * 0.06;
+    }
+    autoCenter(m, dt);
+
+    const spd = m.powerT > 0 ? baseSpeed * 1.16 : baseSpeed;
+    m.vx = m.dir.x * spd;
+    m.vy = m.dir.y * spd;
+    m.blocked = false;
+    moveEntityAxis(m, dt);
+
+    // the genius hoovers the maze; power pellets are its "item"
+    const pi = idx(clampTile(tx, COLS), clampTile(ty, ROWS));
+    const pellet = state.grid.pellets[pi];
+    if (pellet === 1) {
+      state.grid.pellets[pi] = 0;
+      state.pelletsLeft = Math.max(0, state.pelletsLeft - 1);
+    } else if (pellet === 2) {
+      state.grid.pellets[pi] = 0;
+      state.pelletsLeft = Math.max(0, state.pelletsLeft - 1);
+      state.powerPelletsLeft = Math.max(0, state.powerPelletsLeft - 1);
+      m.powerT = 6;
+      addPopup(m.x, m.y - 14, 'POWER!!', '#ff6a5a', 16);
+      audio.power();
+    }
+
+    if (m.graceT > 0) continue; // brief spawn grace, both directions
+
+    // contact — the ghost needs touch; powered Pac-Man is the predator
+    const pl = state.player;
+    if (pl.invT <= 0 && dist(m.x, m.y, pl.x, pl.y) < m.r + pl.r - 1) {
+      if (m.powerT > 0) hitGhostPlayer();
+      else killPacman(m);
+    }
+    if (m.dead) continue;
+    for (const c of state.clones) {
+      if (c._done || c.fade > 0 || c.respawnT > 0) continue;
+      if (dist(m.x, m.y, c.x, c.y) < m.r + 10.5 - 1) {
+        if (m.powerT > 0) cloneDied(c);
+        else killPacman(m); // clones herd and finish him too
+        break;
+      }
+    }
+  }
+  state.pacmans = state.pacmans.filter(p2 => !p2.dead);
+}
+
 function updateBullets(dt) {
   // player & clone bullets
   for (const b of state.bullets) {
@@ -1835,6 +2168,19 @@ function tick(dt) {
     state.introT -= dt;
     updateParticles(dt);
     if (state.introT <= 0) hideBanner();
+    return;
+  }
+
+  if (state.gameMode === 'ghost') {
+    // enemy mode: ghost vs the programmed genius Pac-Man(s)
+    updateGhostPlayer(dt);
+    updateClones(dt);
+    updatePacmans(dt);
+    updateParticles(dt);
+    if (state.spawnQueue.length === 0 && state.pacmans.length === 0 && state.mode === 'play') {
+      clearRound();
+    }
+    hudUpdate();
     return;
   }
 
@@ -2006,6 +2352,7 @@ function drawPacShape(g, x, y, r, dirAngle, mouthAngle, fill, glow) {
 }
 
 function drawPlayer(g, t) {
+  if (state.gameMode === 'ghost') { drawPlayerGhost(g, t); return; }
   const p = state.player;
   if (state.mode === 'over') return; // consumed by explosion
   const blink = p.invT > 0 ? 0.35 + 0.4 * Math.abs(Math.sin(t * 12)) : 1;
@@ -2031,6 +2378,30 @@ function drawPlayer(g, t) {
 }
 
 function drawClone(g, c) {
+  // Enemy mode: clones are translucent replays of your dead ghost attempts
+  if (state.gameMode === 'ghost') {
+    const ddx = c.dir ? c.dir.x : c.dirX, ddy = c.dir ? c.dir.y : c.dirY;
+    const color = `hsl(${c.hue} 90% 65%)`;
+    g.save();
+    g.globalAlpha = c.alpha * 0.92;
+    drawGhostBody(g, c.x, c.y, 10.5, color, ddx * 2.2, ddy * 2.2, state.time, c.x * 0.013 + c.roundNo);
+    g.restore();
+    // round tag + lives pips
+    g.save();
+    g.globalAlpha = Math.min(1, c.alpha + 0.15);
+    g.fillStyle = color;
+    g.font = 'bold 9px "Arial Black", Arial, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(`R${c.roundNo}`, c.x, c.y - 14);
+    for (let i = 0; i < CLONE_MAX_LIVES; i++) {
+      g.fillStyle = i < c.lives ? color : 'rgba(150,170,220,0.22)';
+      g.beginPath();
+      g.arc(c.x - ((CLONE_MAX_LIVES - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+    return;
+  }
   // RL clones are pseudo-players: read facing from c.dir, brighter rim, RL tag
   const ddx = c.rl ? (c.dir ? c.dir.x : -1) : c.dirX;
   const ddy = c.rl ? (c.dir ? c.dir.y : 0) : c.dirY;
@@ -2148,6 +2519,91 @@ function drawGhost(g, e, t) {
   g.restore();
 }
 
+// Shared ghost body (skirt + directional eyes) used by enemy-mode renders.
+// `ghost` draws a full menace-body at (x, y); caller handles alpha/blink.
+function drawGhostBody(g, x, y, r, color, lookX, lookY, t, wobSeed) {
+  g.save();
+  g.translate(x, y);
+  g.shadowColor = color;
+  g.shadowBlur = 12;
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(-r, r * 0.72);
+  g.lineTo(-r, -r * 0.1);
+  g.arc(0, -r * 0.1, r, Math.PI, 0);
+  g.lineTo(r, r * 0.72);
+  const bumps = 4, seg = (2 * r) / bumps;
+  for (let i = 0; i < bumps; i++) {
+    const x0 = r - i * seg;
+    const x1 = x0 - seg / 2;
+    const x2 = x0 - seg;
+    const wob = Math.sin(t * 9 + i * 1.7 + wobSeed) * 1.6;
+    g.lineTo(x1, r * 0.42 + wob);
+    g.lineTo(x2, r * 0.72);
+  }
+  g.closePath();
+  g.fill();
+  g.restore();
+  // eyes
+  g.save();
+  g.translate(x, y);
+  for (const side of [-1, 1]) {
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.ellipse(side * r * 0.38, -r * 0.12, r * 0.24, r * 0.3, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#101038';
+    g.beginPath();
+    g.arc(side * r * 0.38 + lookX, -r * 0.12 + lookY, r * 0.13, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+// The player ghost (enemy mode): crimson menace with a white-hot eyes glow.
+function drawPlayerGhost(g, t) {
+  const p = state.player;
+  if (state.mode === 'over') return;
+  const blink = p.invT > 0 ? 0.35 + 0.4 * Math.abs(Math.sin(t * 12)) : 1;
+  g.save();
+  g.globalAlpha = blink;
+  drawGhostBody(g, p.x, p.y, p.r + 0.5, '#ff3d5e', p.dir.x * 2.4, p.dir.y * 2.4, t, p.x * 0.01);
+  g.restore();
+  // lethal aura
+  g.save();
+  g.globalAlpha = blink * (0.5 + 0.3 * Math.sin(t * 8));
+  g.strokeStyle = '#ff8a9d';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(p.x, p.y, p.r + 4 + Math.sin(t * 8) * 1.5, 0, Math.PI * 2);
+  g.stroke();
+  g.restore();
+}
+
+function drawPacman(g, m, t) {
+  const powered = m.powerT > 0;
+  const dirAngle = m.dir.x === 1 ? 0 : m.dir.x === -1 ? Math.PI : m.dir.y === 1 ? Math.PI / 2 : m.dir.y === -1 ? -Math.PI / 2 : 0;
+  const mouth = 0.06 + Math.abs(Math.sin(m.mouth)) * 0.34 * Math.PI;
+  const spawnScale = m.graceT > 0 ? 0.6 + 0.4 * (1 - m.graceT / 0.8) : 1;
+  g.save();
+  if (m.graceT > 0) g.globalAlpha = 0.55;
+  const fl = powered && Math.sin(t * 12) > 0.55; // power flash
+  drawPacShape(g, m.x, m.y, (powered ? 12.5 : 11) * spawnScale, dirAngle, mouth,
+    powered ? (fl ? '#ffb3a6' : '#ff7a6a') : '#ffd83d',
+    powered ? '#ff5a4e' : '#ffce1f');
+  g.restore();
+  if (powered) {
+    g.save();
+    g.globalAlpha = 0.55 + 0.35 * Math.sin(t * 10);
+    g.strokeStyle = '#ff5a4e';
+    g.lineWidth = 2.2;
+    g.beginPath();
+    g.arc(m.x, m.y, 13.5 + Math.sin(t * 10) * 1.8, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+  }
+}
+
 function drawBullets(g) {
   for (const b of state.bullets) {
     const col = `hsl(${b.hue} 100% ${b.power ? 72 : 60}%)`;
@@ -2214,6 +2670,7 @@ function render(t) {
 
   for (const c of state.clones) { if (!c._done && c.respawnT <= 0) drawClone(ctx, c); }
   for (const e of state.enemies) drawGhost(ctx, e, t);
+  for (const m of state.pacmans) drawPacman(ctx, m, t);
   drawPlayer(ctx, t);
   drawBullets(ctx);
   drawParticles(ctx);
@@ -2232,7 +2689,9 @@ function hudUpdate() {
   setText(hud.hi, String(Math.max(state.hi, state.score)));
   setText(hud.clones, String(state.clones.filter(c => !c._done && c.fade <= 0).length));
   setText(hud.gold, String(state.gold));
-  setText(hud.enemies, String(state.enemies.length + state.spawnQueue.length));
+  const ghostMode = state.gameMode === 'ghost';
+  if (hud.enemiesLabel) setText(hud.enemiesLabel, ghostMode ? 'PAC-MEN' : 'ENEMIES');
+  setText(hud.enemies, String(ghostMode ? state.pacmans.length + state.spawnQueue.length : state.enemies.length + state.spawnQueue.length));
   const livesStr = String(Math.max(0, state.lives));
   if (hud.lives._n !== livesStr) {
     hud.lives._n = livesStr;
@@ -2243,7 +2702,7 @@ function hudUpdate() {
       hud.lives.appendChild(d);
     }
   }
-  if (hud.power) hud.power.classList.toggle('hidden', state.powerT <= 0);
+  if (hud.power) hud.power.classList.toggle('hidden', ghostMode || state.powerT <= 0);
 }
 
 let bannerTimer = null;
@@ -2295,17 +2754,23 @@ function renderShop() {
     row.className = 'shop-row';
     const info = document.createElement('div');
     info.className = 'shop-info';
+    const modeTag = rec.mode === 'ghost' ? '<span class="shop-learn">敵モードの記録（リプレイ再生専用）</span>' : '';
     info.innerHTML =
       `<b>ラウンド${rec.round}のクローン</b>` +
       `<span>撃墜 ${stats.kills}体 ・ ペレット ${stats.pellets}個 ・ 死亡 ${stats.deaths}回</span>` +
-      (rec.rl && learn ? `<span class="shop-learn">学習済み — 攻撃性 ${learn.aggroPct}% ・ ペレット欲 ${learn.pelletPct}% ・ 回避本能 ${learn.dodgePct}%</span>` : '');
+      (rec.rl && learn ? `<span class="shop-learn">学習済み — 攻撃性 ${learn.aggroPct}% ・ ペレット欲 ${learn.pelletPct}% ・ 回避本能 ${learn.dodgePct}%</span>` : modeTag);
     const chip = document.createElement('div');
     chip.className = 'shop-chip' + (rec.rl ? ' rl' : '');
     chip.style.setProperty('--hue', String(hue));
     chip.textContent = rec.rl ? 'RL' : String(rec.round);
     const btn = document.createElement('button');
     btn.className = 'assign-btn';
-    if (rec.rl) {
+    if (rec.mode === 'ghost') {
+      btn.textContent = 'リプレイ専用';
+      btn.disabled = true;
+      btn.classList.add('poor');
+      btn.title = '敵モードの記録は強化学習の対象外です';
+    } else if (rec.rl) {
       btn.textContent = '擬似プレイヤー済み';
       btn.disabled = true;
       btn.classList.add('done');
@@ -2327,7 +2792,7 @@ function renderShop() {
 
 function buyRL(i) {
   const rec = state.recordings[i];
-  if (!rec || rec.rl || state.gold < RL_COST) return;
+  if (!rec || rec.rl || rec.mode === 'ghost' || state.gold < RL_COST) return;
   state.gold -= RL_COST;
   saveGold();
   attachRLToRecording(rec);
@@ -2377,8 +2842,8 @@ window.addEventListener('keydown', (ev) => {
   }
   if (code === 'KeyM') { audio.setMuted(!audio.muted); return; }
   if (code === 'Enter') {
-    if (state.mode === 'title') { audio.ensure(); audio.uiStart(); startGame(); }
-    else if (state.mode === 'over') { audio.ensure(); audio.uiStart(); startGame(); }
+    if (state.mode === 'title') { audio.ensure(); audio.uiStart(); startGame('player'); }
+    else if (state.mode === 'over') { audio.ensure(); audio.uiStart(); startGame(state.gameMode); }
   }
 });
 window.addEventListener('keyup', (ev) => {
@@ -2398,11 +2863,17 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.getElementById('btn-start').addEventListener('click', () => {
-  audio.ensure(); audio.uiStart(); startGame();
+  audio.ensure(); audio.uiStart(); startGame('player');
 });
 document.getElementById('btn-restart').addEventListener('click', () => {
-  audio.ensure(); audio.uiStart(); startGame();
+  audio.ensure(); audio.uiStart(); startGame(state.gameMode);
 });
+const btnGhost = document.getElementById('btn-ghost-mode');
+if (btnGhost) {
+  btnGhost.addEventListener('click', () => {
+    audio.ensure(); audio.uiStart(); startGame('ghost');
+  });
+}
 
 // ---------------------------------------------------------------- main loop
 let last = performance.now();

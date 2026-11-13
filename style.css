@@ -472,3 +472,41 @@ kbd {
 }
 .ctrl-shop:hover { background: rgba(255, 210, 74, 0.18); box-shadow: 0 0 12px rgba(255, 210, 74, 0.3); }
 .ctrl-shop kbd { color: #ffd24a; border-color: rgba(255, 210, 74, 0.45); }
+
+/* ============ ENEMY MODE: 天敵ゴースト ============ */
+.c-red { color: #ff5a4e; text-shadow: 0 0 10px rgba(255, 90, 78, 0.55); }
+.enemy-mode-rules {
+  text-align: left;
+  background: rgba(46, 8, 22, 0.55);
+  border: 1px solid rgba(255, 110, 199, 0.35);
+  border-radius: 14px;
+  padding: 10px 12px 8px;
+  margin: 10px 0 14px;
+  box-shadow: inset 0 0 24px rgba(255, 60, 120, 0.09);
+}
+.enemy-mode-heading {
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 13px; letter-spacing: 0.14em; color: #ff8ad8;
+  text-shadow: 0 0 12px rgba(255, 110, 199, 0.6);
+  margin: 0 2px 6px;
+}
+.enemy-mode-rules .rules { margin: 0; }
+.enemy-mode-rules .rules li { font-size: 11.5px; }
+.mode-select {
+  display: flex; flex-direction: column; gap: 10px;
+  width: min(430px, 94vw); margin: 4px auto 0;
+}
+.mode-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 12px 18px; font-size: 17px; letter-spacing: 0.1em;
+}
+.mode-btn small {
+  font-family: inherit; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; opacity: 0.88; text-transform: none;
+}
+.mode-ghost {
+  background: linear-gradient(180deg, #ff6ec7, #b93bff);
+  box-shadow: 0 0 24px rgba(255, 110, 199, 0.45), 0 6px 0 #5b1c86;
+  color: #2b0733;
+}
+.mode-ghost:hover { box-shadow: 0 0 34px rgba(255, 110, 199, 0.7), 0 6px 0 #5b1c86; }

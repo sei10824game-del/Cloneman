@@ -281,6 +281,52 @@ press('Enter');
 assert(state.mode === 'play' && state.round === 1 && state.score === 0, 'restart resets to round 1');
 assert(state.clones.length === 0, 'clones cleared on new run');
 
+console.log('— enemy mode: 天敵ゴースト vs genius Pac-Man —');
+window.__cloneman.startGame('ghost');
+assert(state.gameMode === 'ghost', 'enemy mode selected');
+assert(state.mode === 'play' && state.round === 1 && state.lives === 3, 'ghost mode starts at round 1 with 3 lives');
+assert(state.spawnQueue.length === 1 && state.pacCount === 1, 'round 1 spawns exactly one Pac-Man');
+step(60 * 3); // intro + spawn
+assert(state.pacmans.length === 1, 'genius Pac-Man entered the maze');
+
+// touch (unpowered) defeats Pac-Man
+{
+  const m = state.pacmans[0];
+  m.graceT = 0; // spawn grace does not protect him from being hunted
+  state.player.x = m.x; state.player.y = m.y; state.player.invT = 0;
+  const scoreB = state.score;
+  step(2);
+  assert(state.pacmans.length === 0, 'touch defeats an unpowered Pac-Man');
+  assert(state.score > scoreB, 'Pac-Man kill scored');
+}
+assert(state.mode === 'clear', 'clearing the last Pac-Man clears the round');
+assert(state.pacCount === 2, 'next round will have +1 Pac-Man');
+step(60 * 5); // clearT + intro
+assert(state.gameMode === 'ghost' && state.round === 2, 'advanced to round 2 in enemy mode');
+assert(state.pacmans.length + state.spawnQueue.length === 2, `round 2 fields two Pac-Men (got ${state.pacmans.length + state.spawnQueue.length})`);
+assert(state.recordings.length === 1 && state.recordings[0].mode === 'ghost', 'ghost attempt recorded (mode=ghost)');
+
+// RL purchase blocked for enemy-mode replays
+state.gold = 9999;
+const rlMark = state.recordings[0].rl;
+window.__cloneman.buyRL(0);
+assert(!state.recordings[0].rl || state.recordings[0].rl === rlMark, 'RL purchase blocked for enemy-mode replays');
+
+// powered Pac-Man kills the ghost → death advances the round, previous self becomes clone
+step(60 * 2); // let both Pac-Men spawn; keep the ghost invulnerable during setup
+state.player.invT = 9999;
+for (const pm of state.pacmans) { pm.powerT = 99; pm.graceT = 0; } // powered = item in use
+const livesB = state.lives;
+const roundB = state.round;
+state.player.invT = 0; // now vulnerable — it is the predator
+const pm = state.pacmans[0];
+state.player.x = pm.x; state.player.y = pm.y;
+step(2);
+assert(state.lives === livesB - 1, 'powered Pac-Man defeats the ghost (touch rule reversed)');
+assert(state.round === roundB + 1, 'death advances the round in enemy mode');
+assert(state.clones.length >= 1, 'the dead run reborn as a ghost clone');
+
+console.log('');
 console.log('');
 if (failures > 0) {
   console.error(`SMOKE TEST FAILED: ${failures} assertion(s) failed`);

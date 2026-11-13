@@ -25,7 +25,7 @@
       <div class="hud-score-row">
         <div class="hud-metric"><span class="hud-label">SCORE</span><span id="hud-score" class="hud-value">0</span></div>
         <div class="hud-metric"><span class="hud-label">HI-SCORE</span><span id="hud-hi" class="hud-value hud-hi">0</span></div>
-        <div class="hud-metric"><span class="hud-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
+        <div class="hud-metric"><span class="hud-label" id="hud-enemies-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
         <div class="hud-metric"><span class="hud-label">CLONES</span><span id="hud-clones" class="hud-value neon-green">0</span></div>
         <div class="hud-metric"><span class="hud-label">GOLD</span><span id="hud-gold" class="hud-value neon-gold">0</span></div>
       </div>
@@ -87,7 +87,20 @@
           <li>大きな<b class="c-green">パワーペレット</b>で一定時間パワーアップ（連射＆弾が巨大化・敵は逃げ惑う）</li>
         </ul>
 
-        <button id="btn-start" class="btn-neon">GAME START</button>
+        <div class="enemy-mode-rules">
+          <div class="enemy-mode-heading">👻 敵モード「天敵ゴースト」</div>
+          <ul class="rules">
+            <li>あなたは<b class="c-pink">赤い天敵ゴースト</b>（弾なし・触れるだけで撃破）。逃げ回る<b class="c-yellow">天才パックマン</b>を狩りに行け</li>
+            <li><b class="c-yellow">パックマンに触れた瞬間に撃破</b>。ただし<b class="c-green">パワーペレット（アイテム）使用中のパックマン</b>に触れると<b class="c-red">あなたがやられる</b></li>
+            <li><b class="c-red">死ぬたびにラウンドが進み</b>、<b class="c-cyan">前の自分がクローンとして出撃</b>する</li>
+            <li><b class="c-yellow">パックマンを倒すと次のラウンドでパックマンの数が+1される</b>（増え続ける天才たち）</li>
+          </ul>
+        </div>
+
+        <div class="mode-select">
+          <button id="btn-start" class="btn-neon mode-btn">プレイヤーモード<small>過去の自分と共闘する弾幕シューティング</small></button>
+          <button id="btn-ghost-mode" class="btn-neon mode-btn mode-ghost">敵モード — 天敵ゴースト<small>プログラムされた天才パックマンを狩る</small></button>
+        </div>
         <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
       </div>
     </div>
