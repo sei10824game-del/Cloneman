@@ -534,6 +534,34 @@ kbd {
 .mode-copyme .final-gold-stat,
 .mode-copyme .ctrl-shop { display: none !important; }
 
+/* ============ UPGRADES ============ */
+.shop-section-title {
+  text-align: left;
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 11px; letter-spacing: 0.16em; color: #b9c8ff;
+  margin: 12px 2px 6px;
+  border-left: 3px solid #ffd24a;
+  padding-left: 8px;
+}
+.shop-section-title .shop-note {
+  font-family: inherit; font-size: 9.5px; letter-spacing: 0.02em;
+  color: #7f8db3; margin-left: 8px; font-weight: 400;
+}
+.shop-upgrades { display: flex; flex-direction: column; gap: 7px; max-height: 30vh; overflow-y: auto; padding-right: 2px; }
+.upg-row { background: rgba(34, 30, 10, 0.6); border-color: rgba(255, 210, 74, 0.3); }
+.shop-chip.upg {
+  background: linear-gradient(160deg, #ffe98a, #f5b81e);
+  box-shadow: 0 0 12px rgba(255, 210, 74, 0.55), 0 3px 0 #6b4a00;
+  color: #4a2e00; font-size: 17px;
+}
+.upg-level { color: #ffd24a; font-size: 11px; margin-left: 4px; }
+.upg-pips { color: #ffd24a; letter-spacing: 2px; font-size: 10px; }
+.upg-btn { background: linear-gradient(180deg, #ffe98a, #f5b81e); box-shadow: 0 0 14px rgba(255, 210, 74, 0.45), 0 4px 0 #6b4a00; color: #3a2404; }
+.upg-btn:hover { filter: brightness(1.07); }
+.upg-btn:disabled { background: #26304f; color: #7f8db3; box-shadow: none; }
+.upg-btn.done { background: #3a3314; color: #ffd24a; }
+.upg-btn.poor { background: #3a2f14; color: #c9b267; }
+
 </style>
 </head>
 <body>
@@ -653,6 +681,9 @@ kbd {
           <b>攻撃性・ペレット欲・回避本能</b>を推定して学習し、以後のクローンは単なるリプレイではなく、
           状況を見て動く<b class="c-green">擬似プレイヤー</b>へ進化します。
         </p>
+        <div class="shop-section-title">アップグレード<span class="shop-note">（永続強化・ランを跨いで有効）</span></div>
+        <div id="shop-upgrades" class="shop-upgrades"></div>
+        <div class="shop-section-title">クローンに強化学習<span class="shop-note">（ラン中のみ）</span></div>
         <div id="shop-clone-list" class="shop-clone-list"></div>
         <div class="shop-foot">
           <span class="shop-cost">1体につき <b id="shop-cost">300</b> G</span>
@@ -940,6 +971,7 @@ const finalScore = document.getElementById('final-score');
 const finalRound = document.getElementById('final-round');
 const finalBest = document.getElementById('final-best');
 const finalGold = document.getElementById('final-gold');
+const upgListEl = document.getElementById('shop-upgrades');
 const titleHi = document.getElementById('title-hi');
 
 // ---------------------------------------------------------------- state
@@ -1145,6 +1177,7 @@ function enemyStats(type, round) {
 }
 
 function makeClone(rec, i) {
+  const lives = Math.max(1, rec.lives || CLONE_MAX_LIVES); // inherit the lives you had when the round ended
   return {
     rec,
     roundNo: rec.round,
@@ -1158,7 +1191,8 @@ function makeClone(rec, i) {
     dir: { x: rec.frames[0].dx, y: rec.frames[0].dy },
     mouth: 0,
     power: false,
-    lives: CLONE_MAX_LIVES,
+    lives,
+    maxLives: lives,
     respawnT: 0,     // >0 → regrouping at the start (invisible, untargetable)
     fade: 0,         // >0 → fading out after running out of lives at replay end
     alpha: 0.62,
@@ -1178,7 +1212,7 @@ function setupRound(n) {
   state.player = {
     x: tileCX(sp.x), y: tileCY(sp.y),
     dir: { x: -1, y: 0 }, nextDir: { x: -1, y: 0 },
-    speed: 168, r: 11,
+    speed: playerSpeed(), r: 11,
     mouth: 0, shootCd: 0, invT: 0,
   };
 
@@ -1254,7 +1288,7 @@ function startGame(mode) {
   try { document.body.classList.toggle('mode-copyme', state.gameMode === 'copyme'); } catch { /* ignore */ }
   state.pacCount = 1;
   state.score = 0;
-  state.lives = 3;
+  state.lives = 3 + upg('lives');
   state.recordings = [];
   state.particles = [];
   state.popups = [];
@@ -1269,17 +1303,21 @@ function startGame(mode) {
 // Death-attempts are recorded too (enemy mode needs them to advance).
 function pushRecording() {
   if (state.rec && state.rec.frames.length > 0) {
-    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [], stats: state.rec.stats, mode: state.gameMode });
+    state.recordings.push({
+      round: state.round, frames: state.rec.frames, shots: state.rec.shots,
+      deaths: state.rec.deaths || [], stats: state.rec.stats, mode: state.gameMode,
+      lives: state.lives, // 残機も記録 — クローンは生まれる時の残機を引き継ぐ
+    });
     if (state.recordings.length > 12) state.recordings.shift();
   }
 }
 
 function clearRound() {
   const bonus = 500 * state.round;
-  const goldGain = GOLD_PER_CLEAR(state.round);
+  const goldGainAmt = goldGainAmount(GOLD_PER_CLEAR(state.round));
   state.score += bonus;
-  if (state.gameMode !== 'copyme') { state.gold += goldGain; saveGold(); }
-  pushRecording();
+  if (state.gameMode !== 'copyme') { state.gold += goldGainAmt; saveGold(); }
+  pushRecording(); // rec.lives = current lives — クローンはこの残機を引き継ぐ
   state.bullets = [];
   state.ebullets = [];
   state.powerT = 0;
@@ -1292,13 +1330,13 @@ function clearRound() {
   saveHi();
   audio.roundClear();
   if (state.gameMode === 'ghost') {
-    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — 次のラウンドはパックマン×${state.pacCount}体`, 2.6);
+    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGainAmt}G — 次のラウンドはパックマン×${state.pacCount}体`, 2.6);
     burst(state.player.x, state.player.y, 26, '#3ae2ff', 190);
   } else if (state.gameMode === 'copyme') {
     showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 — 全クローンが最新の自分を再学習して出撃`, 2.6);
     burst(state.player.x, state.player.y, 26, '#8dff6e', 190);
   } else {
-    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — このラウンドの自分がクローンになる`, 2.6);
+    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGainAmt}G — このラウンドの自分がクローンになる`, 2.6);
     burst(state.player.x, state.player.y, 26, '#ffd83d', 190);
   }
   hudUpdate();
@@ -1453,17 +1491,53 @@ function updateParticles(dt) {
   state.popups = state.popups.filter(po => po.life > 0);
 }
 
+// ---------------------------------------------------------------- upgrades (permanent, saved)
+// Bought with gold in the shop. Persist across runs via localStorage.
+const UPGRADES = [
+  { id: 'lives',     name: '上限残機',       desc: 'スタート残機+1（購入時に今すぐ+1）', ghost: true,  max: 2, cost: [400, 650] },
+  { id: 'attack',    name: '攻撃力',         desc: '直射弾のダメージ+1',                 ghost: false, max: 3, cost: [350, 550, 800] },
+  { id: 'multishot', name: '同時発射',       desc: '一度に放つ弾+1（並走弾）',           ghost: false, max: 2, cost: [500, 900] },
+  { id: 'speed',     name: '移動速度',       desc: '移動速度+6%',                        ghost: true,  max: 2, cost: [250, 450] },
+  { id: 'gold',      name: 'ゴールド獲得',   desc: '獲得ゴールド+25%',                   ghost: true,  max: 2, cost: [300, 550] },
+];
+const DEFAULT_UPGRADES = () => ({ lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0 });
+try { state.upgrades = { ...DEFAULT_UPGRADES(), ...(JSON.parse(localStorage.getItem('cloneman_upgrades') || '{}')) }; } catch { state.upgrades = DEFAULT_UPGRADES(); }
+function saveUpgrades() {
+  try { localStorage.setItem('cloneman_upgrades', JSON.stringify(state.upgrades)); } catch { /* ignore */ }
+}
+const upg = (id) => (state.upgrades && state.upgrades[id]) || 0;
+const playerSpeed = () => Math.round(168 * (1 + 0.06 * upg('speed')));
+const goldMult = () => 1 + 0.25 * upg('gold');
+const goldGainAmount = (amount) => Math.max(1, Math.round(amount * goldMult()));
+const bulletDamage = (power) => (power ? 2 : 1) + upg('attack');
+const shotCount = () => 1 + upg('multishot');
+
 // ---------------------------------------------------------------- combat
+// Fires the whole parallel volley (1 + multishot bullets) along a straight line.
+function fireVolley(x, y, dx, dy, power, from, hue) {
+  const n = shotCount();
+  const px = -dy, py = dx; // perpendicular
+  const spacing = 11;
+  const offsets = [];
+  if (n === 1) offsets.push(0);
+  else if (n === 2) offsets.push(-spacing / 2, spacing / 2);
+  else for (let i = 0; i < n; i++) offsets.push((i - (n - 1) / 2) * spacing);
+  for (const off of offsets) {
+    state.bullets.push({
+      x: x + px * off, y: y + py * off,
+      vx: dx * 430, vy: dy * 430,
+      r: power ? 6 : 4.5, dmg: bulletDamage(power),
+      from, hue, power, life: 2.2,
+    });
+  }
+}
+
 function firePlayerBullet() {
   const p = state.player;
   const d = (p.dir.x || p.dir.y) ? p.dir : { x: -1, y: 0 };
   const power = state.powerT > 0;
   const bx = p.x + d.x * 15, by = p.y + d.y * 15;
-  state.bullets.push({
-    x: bx, y: by, vx: d.x * 430, vy: d.y * 430,
-    r: power ? 6 : 4.5, dmg: power ? 2 : 1,
-    from: 'player', hue: 52, power, life: 2.2,
-  });
+  fireVolley(bx, by, d.x, d.y, power, 'player', 52);
   p.shootCd = power ? 0.3 : 0.5; // クールタイム長め — クローンとの連携が主軸になる
   audio.shoot();
   // record for the clone replay (frame index = frames.length - 1, pushed this tick)
@@ -1474,11 +1548,7 @@ function firePlayerBullet() {
 }
 
 function fireCloneShot(clone, shot) {
-  state.bullets.push({
-    x: shot.x, y: shot.y, vx: shot.dx * 430, vy: shot.dy * 430,
-    r: shot.pow ? 6 : 4.5, dmg: shot.pow ? 2 : 1,
-    from: 'clone', hue: clone.hue, power: shot.pow, life: 2.2,
-  });
+  fireVolley(shot.x, shot.y, shot.dx, shot.dy, shot.pow, 'clone', clone.hue);
 }
 
 function fireEnemyBullet(e, target) {
@@ -1497,7 +1567,7 @@ function damageEnemy(e, dmg, hitX, hitY) {
   if (e.hp <= 0) {
     state.score += e.score;
     if (state.gameMode !== 'copyme') {
-      state.gold += GOLD_PER_KILL;
+      state.gold += goldGainAmount(GOLD_PER_KILL);
       if (state.rec.stats) state.rec.stats.kills++;
       saveGold();
     } else if (state.rec.stats) {
@@ -1919,12 +1989,7 @@ function updateRLClone(c, dt) {
     if (tgt) {
       const d = c.dir;
       const power = state.powerT > 0;
-      state.bullets.push({
-        x: c.x + d.x * 14, y: c.y + d.y * 14,
-        vx: d.x * 430, vy: d.y * 430,
-        r: power ? 6 : 4.5, dmg: power ? 2 : 1,
-        from: 'clone', hue: c.hue, power, life: 2.2,
-      });
+      fireVolley(c.x + d.x * 14, c.y + d.y * 14, d.x, d.y, power, 'clone', c.hue);
       c.fireCd = power ? 0.3 : 0.5;
       audio.shoot();
       state.particles.push({ x: c.x + d.x * 15, y: c.y + d.y * 15, vx: d.x * 60, vy: d.y * 60, life: 0.12, maxLife: 0.12, size: 2.6, color: `hsl(${c.hue} 90% 75%)` });
@@ -2248,7 +2313,7 @@ function killPacman(p) {
   if (p.dead) return;
   p.dead = true;
   state.score += SCORE_PER_PACMAN;
-  state.gold += GOLD_PER_PACMAN;
+  state.gold += goldGainAmount(GOLD_PER_PACMAN);
   if (state.rec && state.rec.stats) state.rec.stats.kills++;
   saveGold();
   addPopup(p.x, p.y, `+${SCORE_PER_PACMAN}`, '#ffe95a', 17);
@@ -2655,10 +2720,11 @@ function drawClone(g, c) {
     g.font = 'bold 9px "Arial Black", Arial, sans-serif';
     g.textAlign = 'center';
     g.fillText(`R${c.roundNo}`, c.x, c.y - 14);
-    for (let i = 0; i < CLONE_MAX_LIVES; i++) {
+    const mp1 = c.maxLives || CLONE_MAX_LIVES;
+    for (let i = 0; i < mp1; i++) {
       g.fillStyle = i < c.lives ? color : 'rgba(150,170,220,0.22)';
       g.beginPath();
-      g.arc(c.x - ((CLONE_MAX_LIVES - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
+      g.arc(c.x - ((mp1 - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
       g.fill();
     }
     g.restore();
@@ -2696,10 +2762,11 @@ function drawClone(g, c) {
   g.font = 'bold 9px "Arial Black", Arial, sans-serif';
   g.textAlign = 'center';
   g.fillText(c.rl ? `RL·${c.roundNo}` : `R${c.roundNo}`, c.x, c.y - 14);
-  for (let i = 0; i < CLONE_MAX_LIVES; i++) {
+  const mp2 = c.maxLives || CLONE_MAX_LIVES;
+  for (let i = 0; i < mp2; i++) {
     g.fillStyle = i < c.lives ? color : 'rgba(150,170,220,0.22)';
     g.beginPath();
-    g.arc(c.x - ((CLONE_MAX_LIVES - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
+    g.arc(c.x - ((mp2 - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
     g.fill();
   }
   g.restore();
@@ -3035,9 +3102,70 @@ function toggleShop() {
   else openShop();
 }
 
+function renderUpgrades() {
+  if (!upgListEl) return;
+  upgListEl.innerHTML = '';
+  const ghost = state.gameMode === 'ghost';
+  for (const u of UPGRADES) {
+    if (ghost && !u.ghost) continue;
+    const level = upg(u.id);
+    const maxed = level >= u.max;
+    const cost = maxed ? 0 : u.cost[level];
+    const row = document.createElement('div');
+    row.className = 'shop-row upg-row';
+    const chip = document.createElement('div');
+    chip.className = 'shop-chip upg';
+    chip.textContent = u.id === 'lives' ? '♥' : u.id === 'attack' ? '⚔' : u.id === 'multishot' ? '∴' : u.id === 'speed' ? '»' : 'G';
+    const info = document.createElement('div');
+    info.className = 'shop-info';
+    info.innerHTML =
+      `<b>${u.name} <span class="upg-level">Lv${level}/${u.max}</span></b>` +
+      `<span>${u.desc}</span>` +
+      `<span class="upg-pips">${'●'.repeat(level)}${'○'.repeat(u.max - level)}</span>`;
+    const btn = document.createElement('button');
+    btn.className = 'assign-btn upg-btn';
+    if (maxed) {
+      btn.textContent = 'MAX';
+      btn.disabled = true;
+      btn.classList.add('done');
+    } else if (state.gold < cost) {
+      btn.textContent = `${cost}G`;
+      btn.disabled = true;
+      btn.classList.add('poor');
+      btn.title = 'ゴールドが足りません';
+    } else {
+      btn.textContent = `強化 ${cost}G`;
+      btn.addEventListener('click', () => buyUpgrade(u.id));
+    }
+    row.appendChild(chip);
+    row.appendChild(info);
+    row.appendChild(btn);
+    upgListEl.appendChild(row);
+  }
+}
+
+function buyUpgrade(id) {
+  const u = UPGRADES.find(x => x.id === id);
+  if (!u) return;
+  const level = upg(id);
+  if (level >= u.max) return;
+  const cost = u.cost[level];
+  if (state.gold < cost) return;
+  state.gold -= cost;
+  state.upgrades[id] = level + 1;
+  saveGold();
+  saveUpgrades();
+  if (id === 'lives') state.lives += 1;
+  if (id === 'speed' && state.player) state.player.speed = playerSpeed();
+  audio.power();
+  renderShop();
+  hudUpdate();
+}
+
 function renderShop() {
   shopGoldEl.textContent = String(state.gold);
   if (shopCostEl) shopCostEl.textContent = String(RL_COST);
+  renderUpgrades();
   shopListEl.innerHTML = '';
   const recs = state.recordings;
   if (!recs.length) {
@@ -3218,7 +3346,7 @@ hudUpdate();
 requestAnimationFrame(frame);
 
 // debug / smoke-test handle (harmless in production; used by tools/smoke.mjs)
-window.__cloneman = { state, startGame, setupRound, togglePause, buyRL, toggleShop };
+window.__cloneman = { state, startGame, setupRound, togglePause, buyRL, buyUpgrade, toggleShop };
 
 </script>
 </body>

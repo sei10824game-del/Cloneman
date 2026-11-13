@@ -176,6 +176,7 @@ console.log('— destructible terrain & round reset —');
 const destructBefore = state.grid.destruct.size;
 const someBlock = [...state.grid.destruct][0];
 state.grid.destruct.delete(someBlock); // pretend it was smashed by a bullet
+state.lives = 3; // pin: clone-life inheritance is tested separately
 state.enemies.length = 0; state.spawnQueue.length = 0;
 step(3);
 assert(state.mode === 'clear', 'clearing all enemies triggers round clear');
@@ -492,6 +493,87 @@ state.enemies.length = 0; state.spawnQueue.length = 0;
   state.enemies.push(ph);
   step(30);
   assert(ph.invisibleT > 0, 'phantom turned invisible on its cycle');
+}
+
+console.log('');
+console.log('— clone inherits remaining lives at clear time —');
+window.__cloneman.startGame('player');
+step(110);
+state.player.invT = 9999;
+step(60 * 10); // 10s of real play — a recording actually worth cloning
+state.lives = 1;
+state.enemies.length = 0; state.spawnQueue.length = 0;
+step(3); // forced clear with 1 life left
+step(60 * 5);
+assert(state.clones.length === 1, 'clone spawned from the 1-life clear');
+assert(state.clones[0].lives === 1 && state.clones[0].maxLives === 1, 'clone inherited the 1 life you had at clear (maxLives=1)');
+window.__cloneman.startGame('player');
+step(110);
+state.player.invT = 9999;
+step(60 * 10);
+state.lives = 2;
+state.enemies.length = 0; state.spawnQueue.length = 0;
+step(3); // clear with 2 lives
+step(60 * 5);
+assert(state.clones[0].lives === 2 && state.clones[0].maxLives === 2, 'clone inherited 2 lives');
+
+console.log('— shop upgrades: permanent character build —');
+state.upgrades = { lives: 0, attack: 0, multishot: 0, speed: 0, gold: 0 };
+try { globalThis.localStorage.removeItem('cloneman_upgrades'); } catch { /* ignore */ }
+window.__cloneman.startGame('player');
+step(110);
+state.player.invT = 9999;
+state.gold = 5000;
+assert(state.lives === 3, 'starts at 3 lives with no upgrades');
+window.__cloneman.buyUpgrade('lives');
+assert(state.lives === 4, 'buying 上限残機 grants an immediate +1 life');
+assert(state.upgrades.lives === 1, 'upgrade level recorded');
+assert((globalThis.localStorage.getItem('cloneman_upgrades') || '').includes('"lives":1'), 'upgrade persisted to localStorage');
+window.__cloneman.buyUpgrade('multishot');
+assert(state.upgrades.multishot === 1, 'multishot level 1 purchased');
+
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  for (let tx = 7; tx <= 12; tx++) { const i = idxC(tx, 8); state.grid.walls[i] = 0; state.grid.destruct.delete(i); state.grid.pellets[i] = 0; }
+  const tanky = { ...makeChaser(11 * TI + 16, 8 * TI + 16, 'tank-test'), hp: 5, maxHp: 5, speed: 0, thinkT: 999, fireCd: 999 };
+  state.enemies.push(tanky);
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = tanky.y; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 }; };
+  pin();
+  press('Space'); step(1); release('Space');
+  assert(state.bullets.length === 2, `multishot fires two parallel bullets (got ${state.bullets.length})`);
+  assert(state.bullets[0].dmg === 1, 'base damage is 1 before the attack upgrade');
+  step(60); // wait out the cooldown
+  pin();
+  window.__cloneman.buyUpgrade('attack');
+  assert(state.upgrades.attack === 1, 'attack upgrade purchased');
+  press('Space'); step(1); release('Space');
+  const lastDmg = state.bullets[state.bullets.length - 1].dmg;
+  assert(lastDmg === 2, `attack upgrade raises damage to 2 (got ${lastDmg})`);
+}
+window.__cloneman.buyUpgrade('speed');
+assert(state.player.speed === 178, `speed upgrade applies +6% immediately (got ${state.player.speed})`);
+
+state.gold = 100;
+window.__cloneman.buyUpgrade('gold'); // costs 300 — must fail
+assert(state.upgrades.gold === 0, 'upgrade blocked when gold is insufficient');
+state.gold = 300;
+window.__cloneman.buyUpgrade('gold');
+assert(state.upgrades.gold === 1 && state.gold === 0, 'gold upgrade purchased at 300G');
+
+{
+  const TI = 32, COLS = 25;
+  const idxC = (x, y) => y * COLS + x;
+  for (let tx = 7; tx <= 12; tx++) { const i = idxC(tx, 8); state.grid.walls[i] = 0; state.grid.destruct.delete(i); state.grid.pellets[i] = 0; }
+  state.gold = 0;
+  const prey = { ...makeChaser(10 * TI + 16, 8 * TI + 16, 'gold-target'), hp: 1, maxHp: 1, speed: 0, thinkT: 999, fireCd: 999 };
+  state.enemies.push(prey);
+  const pin = () => { state.player.x = 7 * TI + 16; state.player.y = prey.y; state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 }; };
+  const stepPin = (n) => { for (let i = 0; i < n; i++) { pin(); step(1); } };
+  pin();
+  press('Space'); stepPin(1); release('Space');
+  stepPin(120);
+  assert(state.gold === 5, `gold upgrade turns a kill into 5G (4G x 1.25, got ${state.gold}G)`);
 }
 
 console.log('');

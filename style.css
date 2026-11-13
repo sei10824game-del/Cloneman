@@ -521,3 +521,31 @@ kbd {
 .mode-copyme .hud-gold-metric,
 .mode-copyme .final-gold-stat,
 .mode-copyme .ctrl-shop { display: none !important; }
+
+/* ============ UPGRADES ============ */
+.shop-section-title {
+  text-align: left;
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 11px; letter-spacing: 0.16em; color: #b9c8ff;
+  margin: 12px 2px 6px;
+  border-left: 3px solid #ffd24a;
+  padding-left: 8px;
+}
+.shop-section-title .shop-note {
+  font-family: inherit; font-size: 9.5px; letter-spacing: 0.02em;
+  color: #7f8db3; margin-left: 8px; font-weight: 400;
+}
+.shop-upgrades { display: flex; flex-direction: column; gap: 7px; max-height: 30vh; overflow-y: auto; padding-right: 2px; }
+.upg-row { background: rgba(34, 30, 10, 0.6); border-color: rgba(255, 210, 74, 0.3); }
+.shop-chip.upg {
+  background: linear-gradient(160deg, #ffe98a, #f5b81e);
+  box-shadow: 0 0 12px rgba(255, 210, 74, 0.55), 0 3px 0 #6b4a00;
+  color: #4a2e00; font-size: 17px;
+}
+.upg-level { color: #ffd24a; font-size: 11px; margin-left: 4px; }
+.upg-pips { color: #ffd24a; letter-spacing: 2px; font-size: 10px; }
+.upg-btn { background: linear-gradient(180deg, #ffe98a, #f5b81e); box-shadow: 0 0 14px rgba(255, 210, 74, 0.45), 0 4px 0 #6b4a00; color: #3a2404; }
+.upg-btn:hover { filter: brightness(1.07); }
+.upg-btn:disabled { background: #26304f; color: #7f8db3; box-shadow: none; }
+.upg-btn.done { background: #3a3314; color: #ffd24a; }
+.upg-btn.poor { background: #3a2f14; color: #c9b267; }
