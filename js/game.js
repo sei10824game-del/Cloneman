@@ -518,24 +518,18 @@ function hitPlayer() {
 }
 
 // Enemy mode: a powered-up Pac-Man got the ghost — the failed attempt is
-// recorded as a clone, and THE ROUND ADVANCES. At zero lives it's game over.
+// recorded as a clone, and THE ROUND ADVANCES. 敵モードは残機無制限 — 倒されても消えない。
 function hitGhostPlayer() {
   const p = state.player;
   if (p.invT > 0 || state.mode !== 'play') return;
   if (state.rec && state.rec.deaths) state.rec.deaths.push(Math.max(0, state.rec.frames.length - 1));
   if (state.rec && state.rec.stats) state.rec.stats.deaths++;
-  state.lives--;
+  // 残機は減らさない（無制限）— クローンが増えるだけ
   audio.playerHit();
   state.shakeT = Math.max(state.shakeT, 0.55);
   burst(p.x, p.y, 22, '#3ae2ff', 220);
   pushRecording(); // この死んだ自分がクローンとして次ラウンドに出撃
 
-  if (state.lives <= 0) {
-    burst(p.x, p.y, 42, '#ffd83d', 300);
-    hudUpdate();
-    gameOver();
-    return;
-  }
   // 真仕様: 死ぬたびにラウンドが進み、前の自分がクローンとして生成される
   setupRound(state.round + 1);
 }
@@ -573,7 +567,7 @@ function updateParticles(dt) {
 // Bought with gold in the shop. Persist across runs via localStorage.
 // Cost of the next level grows geometrically: base * growth^level (rounded to 50G).
 const UPGRADES = [
-  { id: 'lives',     name: '上限残機',     desc: 'スタート残機+1（購入時に今すぐ+1）',                    ghost: true,  max: 6,  base: 400, growth: 1.6,  icon: '♥' },
+  { id: 'lives',     name: '上限残機',     desc: 'スタート残機+1（購入時に今すぐ+1）',                    ghost: false, max: 6,  base: 400, growth: 1.6,  icon: '♥' },
   { id: 'attack',    name: '攻撃力',       desc: '直射弾のダメージ+1',                                    ghost: false, max: 10, base: 350, growth: 1.35, icon: '⚔' },
   { id: 'multishot', name: '同時発射',     desc: '一度に放つ弾+1（並走弾）',                              ghost: false, max: 4,  base: 500, growth: 1.5,  icon: '∴' },
   { id: 'speed',     name: '移動速度',     desc: '移動速度+6%',                                           ghost: true,  max: 8,  base: 250, growth: 1.3,  icon: '»' },
@@ -2177,14 +2171,26 @@ function hudUpdate() {
   const ghostMode = state.gameMode === 'ghost';
   if (hud.enemiesLabel) setText(hud.enemiesLabel, ghostMode ? 'PAC-MEN' : 'ENEMIES');
   setText(hud.enemies, String(ghostMode ? state.pacmans.length + state.spawnQueue.length : state.enemies.length + state.spawnQueue.length));
-  const livesStr = String(Math.max(0, state.lives));
-  if (hud.lives._n !== livesStr) {
-    hud.lives._n = livesStr;
-    hud.lives.innerHTML = '';
-    for (let i = 0; i < state.lives; i++) {
+  if (ghostMode) {
+    const infStr = '∞';
+    if (hud.lives._n !== infStr) {
+      hud.lives._n = infStr;
+      hud.lives.innerHTML = '';
       const d = document.createElement('div');
-      d.className = 'life';
+      d.className = 'life-inf';
+      d.textContent = '∞';
       hud.lives.appendChild(d);
+    }
+  } else {
+    const livesStr = String(Math.max(0, state.lives));
+    if (hud.lives._n !== livesStr) {
+      hud.lives._n = livesStr;
+      hud.lives.innerHTML = '';
+      for (let i = 0; i < state.lives; i++) {
+        const d = document.createElement('div');
+        d.className = 'life';
+        hud.lives.appendChild(d);
+      }
     }
   }
   if (hud.power) hud.power.classList.toggle('hidden', ghostMode || state.powerT <= 0);

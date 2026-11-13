@@ -594,6 +594,16 @@ kbd {
   box-shadow: 0 0 14px rgba(255, 90, 90, .45);
 }
 
+/* ---- ghost mode: unlimited lives ---- */
+.life-inf {
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 20px;
+  color: #3ae2ff;
+  text-shadow: 0 0 10px rgba(58, 226, 255, .8);
+  line-height: 1;
+  align-self: center;
+}
+
 </style>
 </head>
 <body>
@@ -664,7 +674,7 @@ kbd {
         <ul class="rules">
           <li><b class="c-yellow">敵を全滅</b>させるとラウンドクリア — 壊れた地形と敵がリセットされ、次のラウンドへ</li>
           <li>クリアしたラウンドの<b class="c-cyan">自分がクローンとして同じ動きを再現</b>し、弾も撃ってくれる</li>
-          <li>クローンは<b class="c-green">味方</b>（味方同士のダメージなし）で<b class="c-green">残機3つ</b>。被弾・再生終了で残機を1消費しスタート地点から立て直し、残機0で消滅</li>
+          <li>クローンは<b class="c-green">味方</b>（味方同士のダメージなし）で<b class="c-green">残機はプレイヤー継承</b>（クリア時の残機をそのまま引き継ぐ）。被弾・再生終了で残機を1消費しスタート地点から立て直し、残機0で消滅</li>
           <li>リプレイ中の<b class="c-cyan">死亡→復活</b>もそのまま再演される（クローンは爆発→復活地点に再登場→戦闘再開）</li>
           <li>自機の弾は<b class="c-yellow">クールタイム長め</b>。クローンの弾との連携が生存のカギ</li>
           <li>ラウンドクリアで<b class="c-yellow">ゴールド</b>獲得。<kbd>B</kbd>の<b class="c-yellow">強化学習ショップ</b>で購入し、好きなクローンを<b class="c-green">擬似プレイヤー</b>に進化させよう</li>
@@ -678,7 +688,7 @@ kbd {
             <li>あなたは<b class="c-pink">赤い天敵ゴースト</b>（弾なし・触れるだけで撃破）。逃げ回る<b class="c-yellow">天才パックマン</b>を狩りに行け</li>
             <li><b class="c-yellow">パックマンに触れた瞬間に撃破</b>。ただし<b class="c-green">パワーペレット（アイテム）使用中のパックマン</b>に触れると<b class="c-red">あなたがやられる</b></li>
             <li><b class="c-red">撃ち返し注意！</b> 天才パックマンは<b class="c-yellow">通常プレイと同じルールで自律プレイ</b> — ペレットを食べ、パワーペレットで強化し、<b class="c-yellow">直線に弾を撃ってくる</b>（クールタイム長め・直進のみ）</li>
-            <li><b class="c-red">死ぬたびにラウンドが進み</b>、<b class="c-cyan">前の自分がクローンとして出撃</b>する</li>
+            <li><b class="c-green">残機は無制限！</b> <b class="c-red">死ぬたびにラウンドが進み</b>、<b class="c-cyan">前の自分がクローンとして出撃</b>する</li>
             <li><b class="c-yellow">パックマンを倒すと次のラウンドでパックマンの数が+1される</b>（増え続ける天才たち）</li>
           </ul>
         </div>
@@ -1476,24 +1486,18 @@ function hitPlayer() {
 }
 
 // Enemy mode: a powered-up Pac-Man got the ghost — the failed attempt is
-// recorded as a clone, and THE ROUND ADVANCES. At zero lives it's game over.
+// recorded as a clone, and THE ROUND ADVANCES. 敵モードは残機無制限 — 倒されても消えない。
 function hitGhostPlayer() {
   const p = state.player;
   if (p.invT > 0 || state.mode !== 'play') return;
   if (state.rec && state.rec.deaths) state.rec.deaths.push(Math.max(0, state.rec.frames.length - 1));
   if (state.rec && state.rec.stats) state.rec.stats.deaths++;
-  state.lives--;
+  // 残機は減らさない（無制限）— クローンが増えるだけ
   audio.playerHit();
   state.shakeT = Math.max(state.shakeT, 0.55);
   burst(p.x, p.y, 22, '#3ae2ff', 220);
   pushRecording(); // この死んだ自分がクローンとして次ラウンドに出撃
 
-  if (state.lives <= 0) {
-    burst(p.x, p.y, 42, '#ffd83d', 300);
-    hudUpdate();
-    gameOver();
-    return;
-  }
   // 真仕様: 死ぬたびにラウンドが進み、前の自分がクローンとして生成される
   setupRound(state.round + 1);
 }
@@ -1531,7 +1535,7 @@ function updateParticles(dt) {
 // Bought with gold in the shop. Persist across runs via localStorage.
 // Cost of the next level grows geometrically: base * growth^level (rounded to 50G).
 const UPGRADES = [
-  { id: 'lives',     name: '上限残機',     desc: 'スタート残機+1（購入時に今すぐ+1）',                    ghost: true,  max: 6,  base: 400, growth: 1.6,  icon: '♥' },
+  { id: 'lives',     name: '上限残機',     desc: 'スタート残機+1（購入時に今すぐ+1）',                    ghost: false, max: 6,  base: 400, growth: 1.6,  icon: '♥' },
   { id: 'attack',    name: '攻撃力',       desc: '直射弾のダメージ+1',                                    ghost: false, max: 10, base: 350, growth: 1.35, icon: '⚔' },
   { id: 'multishot', name: '同時発射',     desc: '一度に放つ弾+1（並走弾）',                              ghost: false, max: 4,  base: 500, growth: 1.5,  icon: '∴' },
   { id: 'speed',     name: '移動速度',     desc: '移動速度+6%',                                           ghost: true,  max: 8,  base: 250, growth: 1.3,  icon: '»' },
@@ -3135,14 +3139,26 @@ function hudUpdate() {
   const ghostMode = state.gameMode === 'ghost';
   if (hud.enemiesLabel) setText(hud.enemiesLabel, ghostMode ? 'PAC-MEN' : 'ENEMIES');
   setText(hud.enemies, String(ghostMode ? state.pacmans.length + state.spawnQueue.length : state.enemies.length + state.spawnQueue.length));
-  const livesStr = String(Math.max(0, state.lives));
-  if (hud.lives._n !== livesStr) {
-    hud.lives._n = livesStr;
-    hud.lives.innerHTML = '';
-    for (let i = 0; i < state.lives; i++) {
+  if (ghostMode) {
+    const infStr = '∞';
+    if (hud.lives._n !== infStr) {
+      hud.lives._n = infStr;
+      hud.lives.innerHTML = '';
       const d = document.createElement('div');
-      d.className = 'life';
+      d.className = 'life-inf';
+      d.textContent = '∞';
       hud.lives.appendChild(d);
+    }
+  } else {
+    const livesStr = String(Math.max(0, state.lives));
+    if (hud.lives._n !== livesStr) {
+      hud.lives._n = livesStr;
+      hud.lives.innerHTML = '';
+      for (let i = 0; i < state.lives; i++) {
+        const d = document.createElement('div');
+        d.className = 'life';
+        hud.lives.appendChild(d);
+      }
     }
   }
   if (hud.power) hud.power.classList.toggle('hidden', ghostMode || state.powerT <= 0);

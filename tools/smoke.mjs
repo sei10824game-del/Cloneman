@@ -285,7 +285,7 @@ assert(state.clones.length === 0, 'clones cleared on new run');
 console.log('— enemy mode: 天敵ゴースト vs genius Pac-Man —');
 window.__cloneman.startGame('ghost');
 assert(state.gameMode === 'ghost', 'enemy mode selected');
-assert(state.mode === 'play' && state.round === 1 && state.lives === 3, 'ghost mode starts at round 1 with 3 lives');
+assert(state.mode === 'play' && state.round === 1, 'ghost mode starts at round 1 (lives: unlimited)');
 assert(state.spawnQueue.length === 1 && state.pacCount === 1, 'round 1 spawns exactly one Pac-Man');
 step(60 * 3); // intro + spawn
 assert(state.pacmans.length === 1, 'genius Pac-Man entered the maze');
@@ -323,7 +323,8 @@ state.player.invT = 0; // now vulnerable — it is the predator
 const pm = state.pacmans[0];
 state.player.x = pm.x; state.player.y = pm.y;
 step(2);
-assert(state.lives === livesB - 1, 'powered Pac-Man defeats the ghost (touch rule reversed)');
+assert(state.lives === livesB, 'enemy mode lives are unlimited — a powered Pac-Man hit costs nothing');
+assert(state.mode !== 'over', 'the ghost can never game-over in enemy mode');
 assert(state.round === roundB + 1, 'death advances the round in enemy mode');
 assert(state.clones.length >= 1, 'the dead run reborn as a ghost clone');
 
