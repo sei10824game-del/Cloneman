@@ -366,6 +366,25 @@ assert(state.round === 3 && state.clones.length === 2, 'round 3 fields two self-
 assert(state.model.trainedAt >= (state.recordings[0].frames.length + state.recordings[1].frames.length), 'model retrained on ALL accumulated history each round');
 
 console.log('');
+console.log('— enemy mode: Pac-Man fights back like the normal player —');
+window.__cloneman.startGame('ghost');
+step(60 * 3); // intro + Pac-Man spawn
+{
+  const TI = 32;
+  const pm = state.pacmans[0];
+  pm.graceT = 0; pm.powerT = 0; pm.thinkT = 999; // hold a steady line for determinism
+  state.player.x = 7 * TI + 16; state.player.y = 8 * TI + 16; state.player.invT = 0;
+  pm.x = 11 * TI + 16; pm.y = 8 * TI + 16; // same row, clear line of sight
+  pm.dir = { x: -1, y: 0 }; // facing the ghost — like a human lining up the shot
+  let sawBullet = false;
+  for (let i = 0; i < 70 && !sawBullet; i++) { step(1); if (state.ebullets.length > 0) sawBullet = true; }
+  assert(sawBullet, 'the programmed Pac-Man fired a straight shot at the ghost (same rules as normal play)');
+  pm.graceT = 999; // keep its body out of the way — only the bullet matters now
+  step(60 * 3); // let the straight bullet land
+  assert(state.lives === 2 || state.round === 2, `Pac-Man bullet hit the ghost (lives=${state.lives}, round=${state.round}) — death advances the round`);
+}
+
+console.log('');
 console.log('');
 if (failures > 0) {
   console.error(`SMOKE TEST FAILED: ${failures} assertion(s) failed`);

@@ -1122,10 +1122,55 @@ function spawnPacman() {
     mouth: Math.random() * 6,
     powerT: 0,
     thinkT: 0,
+    fireCd: 0.7,
     graceT: 0.8,
     dead: false,
     blocked: false,
   });
+}
+
+// Pac-Man is the normal player, programmed: same rules in both directions.
+// It only fires straight ahead — line it up, or it misses into a wall like you would.
+function pacmanLineTarget(m) {
+  const mx = Math.floor(m.x / TILE), my = Math.floor(m.y / TILE);
+  const targets = [state.player];
+  for (const c of state.clones) {
+    if (c._done || c.fade > 0 || c.respawnT > 0) continue;
+    targets.push(c);
+  }
+  let best = null, bestD = Infinity;
+  for (const t of targets) {
+    const tx = Math.floor(t.x / TILE), ty = Math.floor(t.y / TILE);
+    let d;
+    if (m.dir.x !== 0) {
+      if (my !== ty) continue;
+      const s = Math.sign(tx - mx);
+      if (s !== m.dir.x) continue;
+      d = Math.abs(tx - mx);
+    } else if (m.dir.y !== 0) {
+      if (mx !== tx) continue;
+      const s = Math.sign(ty - my);
+      if (s !== m.dir.y) continue;
+      d = Math.abs(ty - my);
+    } else continue;
+    if (d > 9 || d < 1 || d >= bestD) continue;
+    if (losClear(mx, my, tx, ty)) { best = t; bestD = d; }
+  }
+  return best;
+}
+
+function firePacmanBullet(m) {
+  const d = (m.dir.x || m.dir.y) ? m.dir : { x: -1, y: 0 };
+  const power = m.powerT > 0;
+  state.ebullets.push({
+    x: m.x + d.x * 15, y: m.y + d.y * 15,
+    vx: d.x * 430, vy: d.y * 430,
+    r: power ? 6 : 4.5, dmg: power ? 2 : 1,
+    from: 'pacman', hue: 46, power, life: 2.2,
+  });
+  m.fireCd = power ? 0.3 : 0.5; // 自機と同じクールタイム
+  audio.shoot();
+  state.particles.push({ x: m.x + d.x * 15, y: m.y + d.y * 15, vx: d.x * 60, vy: d.y * 60, life: 0.14, maxLife: 0.14, size: 3, color: '#fff3a0' });
 }
 
 function choosePacmanDir(p) {
@@ -1202,11 +1247,14 @@ function updatePacmans(dt) {
   state.pelletFieldT -= dt;
   if (state.pelletFieldT <= 0 || !state.pelletField) computePacmanFields();
 
-  const baseSpeed = Math.min(118 + state.round * 3, 152);
+  // the programmed normal player: same base speed as the human (196 when powered)
+  const baseSpeed = 168;
+  const poweredSpeed = 196;
   for (const m of state.pacmans) {
     m.powerT = Math.max(0, m.powerT - dt);
     m.graceT = Math.max(0, m.graceT - dt);
     m.thinkT -= dt;
+    m.fireCd -= dt;
     m.mouth += dt * 10;
 
     const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
@@ -1217,7 +1265,7 @@ function updatePacmans(dt) {
     }
     autoCenter(m, dt);
 
-    const spd = m.powerT > 0 ? baseSpeed * 1.16 : baseSpeed;
+    const spd = m.powerT > 0 ? poweredSpeed : baseSpeed;
     m.vx = m.dir.x * spd;
     m.vy = m.dir.y * spd;
     m.blocked = false;
@@ -1239,6 +1287,9 @@ function updatePacmans(dt) {
     }
 
     if (m.graceT > 0) continue; // brief spawn grace, both directions
+
+    // fight back exactly like the human player: straight shot, long cooldown
+    if (m.fireCd <= 0 && pacmanLineTarget(m)) firePacmanBullet(m);
 
     // contact — the ghost needs touch; powered Pac-Man is the predator
     const pl = state.player;
@@ -1307,7 +1358,7 @@ function updateBullets(dt) {
     // destructible blocks do not stop enemy fire (they're cracked anyway)
     if (p.invT <= 0 && dist(b.x, b.y, p.x, p.y) < b.r + p.r - 1) {
       b.life = 0;
-      hitPlayer();
+      if (state.gameMode === 'ghost') hitGhostPlayer(); else hitPlayer();
       continue;
     }
     // enemy fire also destroys clones
@@ -1359,6 +1410,7 @@ function tick(dt) {
     updateGhostPlayer(dt);
     updateClones(dt);
     updatePacmans(dt);
+    updateBullets(dt);
     updateParticles(dt);
     if (state.spawnQueue.length === 0 && state.pacmans.length === 0 && state.mode === 'play') {
       clearRound();
@@ -1801,11 +1853,17 @@ function drawBullets(g) {
   }
   for (const b of state.ebullets) {
     g.save();
-    g.shadowColor = '#ff5fd2';
+    if (b.hue != null) {
+      const col = `hsl(${b.hue} 100% ${b.power ? 72 : 60}%)`;
+      g.shadowColor = col;
+      g.fillStyle = col;
+    } else {
+      g.shadowColor = '#ff5fd2';
+      g.fillStyle = '#ff8ae2';
+    }
     g.shadowBlur = 13;
-    g.fillStyle = '#ff8ae2';
     g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#8a1e6e';
+    g.fillStyle = b.hue != null ? '#fff6c4' : '#8a1e6e';
     g.beginPath(); g.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2); g.fill();
     g.restore();
   }
