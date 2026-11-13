@@ -2440,6 +2440,33 @@ window.addEventListener('keyup', (ev) => {
   if (SHOOT_KEYS.has(ev.code)) keys.shoot = false;
 });
 
+// ---------------------------------------------------------------- touch controls
+// On-screen D-pad + action buttons (visible only on coarse-pointer devices via CSS).
+const touchUI = document.getElementById('touch-ui');
+if (touchUI && typeof touchUI.querySelectorAll === 'function') {
+  const hold = (el, onDown, onUp) => {
+    const start = (ev) => { ev.preventDefault(); if (el.setPointerCapture && ev.pointerId !== undefined) { try { el.setPointerCapture(ev.pointerId); } catch { /* noop */ } } onDown(); };
+    const end = (ev) => { ev.preventDefault(); onUp(); };
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', end);
+    el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  };
+  touchUI.querySelectorAll('[data-dir]').forEach((btn) => {
+    const [x, y] = btn.dataset.dir.split(',').map(Number);
+    const on = () => { if (state.player) state.player.nextDir = { x, y }; btn.classList.add('active'); };
+    const off = () => { btn.classList.remove('active'); };
+    hold(btn, on, off);
+  });
+  const fireBtn = document.getElementById('tc-fire');
+  if (fireBtn) hold(fireBtn, () => { keys.shoot = true; fireBtn.classList.add('active'); }, () => { keys.shoot = false; fireBtn.classList.remove('active'); });
+  const shopBtn = document.getElementById('tc-shop');
+  if (shopBtn) shopBtn.addEventListener('click', (ev) => { ev.preventDefault(); toggleShop(); });
+  const pauseBtn = document.getElementById('tc-pause');
+  if (pauseBtn) pauseBtn.addEventListener('click', (ev) => { ev.preventDefault(); togglePause(); });
+}
+
 function togglePause() {
   if (state.mode !== 'play') return;
   state.paused = !state.paused;

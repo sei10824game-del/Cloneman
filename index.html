@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta http-equiv="Cache-Control" content="no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
@@ -170,6 +170,21 @@
     <div class="scanlines" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
   </main>
+
+    <!-- ============ TOUCH CONTROLS (shown on coarse pointers) ============ -->
+    <div id="touch-ui" aria-hidden="true">
+      <div class="tc-dpad">
+        <button class="tc-btn tc-up" data-dir="0,-1" aria-label="上">▲</button>
+        <button class="tc-btn tc-left" data-dir="-1,0" aria-label="左">◀</button>
+        <button class="tc-btn tc-right" data-dir="1,0" aria-label="右">▶</button>
+        <button class="tc-btn tc-down" data-dir="0,1" aria-label="下">▼</button>
+      </div>
+      <div class="tc-actions">
+        <button class="tc-btn tc-mini" id="tc-pause" aria-label="ポーズ">❚❚</button>
+        <button class="tc-btn tc-mini tc-bgr" id="tc-shop" aria-label="ショップ">B</button>
+        <button class="tc-btn tc-fire" id="tc-fire" aria-label="ショット">FIRE</button>
+      </div>
+    </div>
 
   <footer id="controls-bar">
     <span class="ctrl"><kbd>←↑↓→</kbd> 移動</span>

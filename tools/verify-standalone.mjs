@@ -25,6 +25,7 @@ const makeEl = () => {
     classList: (() => { const s = new Set(); return { add: (...c) => c.forEach(x => s.add(x)), remove: (...c) => c.forEach(x => s.delete(x)),
       toggle: (c, f) => { const on = f === undefined ? !s.has(c) : f; on ? s.add(c) : s.delete(c); return on; }, contains: c => s.has(c) }; })(),
     appendChild(c) { el.children.push(c); return c; },
+    querySelectorAll() { return []; },
     addEventListener(type, fn) { (el._h ||= {})[type] = fn; } };
   return el;
 };

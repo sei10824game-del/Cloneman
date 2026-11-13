@@ -49,6 +49,7 @@ function makeEl(tag) {
       };
     })(),
     appendChild(c) { el.children.push(c); return c; },
+    querySelectorAll() { return []; },
     addEventListener(type, fn) { (el._handlers ||= {})[type] = fn; },
     removeEventListener() {},
   };

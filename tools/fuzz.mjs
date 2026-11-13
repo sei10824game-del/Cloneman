@@ -29,6 +29,7 @@ function makeEl() {
       toggle: (c, f) => { const on = f === undefined ? !s.has(c) : f; on ? s.add(c) : s.delete(c); },
       contains: c => s.has(c) }; })(),
     appendChild(c) { el.children.push(c); return c; },
+    querySelectorAll() { return []; },
     addEventListener(t, fn) { (el._h ||= {})[t] = fn; } };
   return el;
 }

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta http-equiv="Cache-Control" content="no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
@@ -604,6 +604,92 @@ kbd {
   align-self: center;
 }
 
+/* ============ TOUCH CONTROLS (mobile) ============ */
+#touch-ui {
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+@media (hover: none) and (pointer: coarse) {
+  #touch-ui {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 6px;
+  }
+  /* tighter HUD on phones */
+  #app { max-width: 100%; padding: 8px 8px 12px; gap: 8px; }
+  #hud { flex-wrap: wrap; padding: 8px 12px; gap: 8px; justify-content: center; }
+  .hud-score-row { flex-wrap: wrap; gap: 8px 14px; justify-content: center; }
+  #hud-round { font-size: 26px; }
+  .hud-metric .hud-value { font-size: 14px; }
+  .hud-label { font-size: 9px; }
+  #logo-mini { display: none; }
+}
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+  #game { width: auto; height: calc(100vh - 100px); max-width: 100%; }
+  #stage { width: fit-content; margin: 0 auto; }
+  /* controls float in the side gutters; maze stays untouched in the middle */
+  #touch-ui {
+    position: fixed;
+    left: 12px; right: 12px; bottom: 10px;
+    z-index: 9;               /* under shop/pause overlays (z:10), above the canvas */
+    justify-content: space-between;
+    padding: 0;
+    pointer-events: none;     /* gaps let taps fall through to nothing */
+  }
+  #touch-ui .tc-btn { pointer-events: auto; opacity: .85; }
+  .tc-fire { min-width: 78px; min-height: 78px; }
+}
+.tc-dpad {
+  display: grid;
+  grid-template-areas: '. u .' 'l . r' '. d .';
+  gap: 6px;
+}
+.tc-up { grid-area: u; } .tc-left { grid-area: l; }
+.tc-right { grid-area: r; } .tc-down { grid-area: d; }
+.tc-btn {
+  font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 62px; min-height: 54px;
+  border-radius: 14px;
+  border: 1px solid rgba(64, 226, 255, .45);
+  background: rgba(13, 24, 48, .82);
+  color: #59e8ff;
+  font-size: 22px; font-weight: 700;
+  box-shadow: 0 3px 0 rgba(10, 30, 60, .9), 0 0 12px rgba(64, 226, 255, .25);
+  touch-action: none;
+}
+.tc-btn:active, .tc-btn.active {
+  background: rgba(64, 226, 255, .30);
+  color: #eaffff;
+  box-shadow: 0 1px 0 rgba(10, 30, 60, .9), 0 0 18px rgba(64, 226, 255, .55);
+  transform: translateY(2px);
+}
+.tc-actions { display: flex; align-items: center; gap: 10px; }
+.tc-mini { min-width: 48px; min-height: 48px; font-size: 15px; border-radius: 12px; }
+.tc-bgr { color: #ffd24a; border-color: rgba(255, 210, 74, .5); }
+.tc-bgr:active, .tc-bgr.active { background: rgba(255, 210, 74, .28); box-shadow: 0 0 18px rgba(255, 210, 74, .5); }
+.tc-fire {
+  min-width: 92px; min-height: 92px;
+  border-radius: 50%;
+  font-size: 20px; letter-spacing: .08em;
+  color: #ffe98a;
+  border: 2px solid rgba(255, 210, 74, .65);
+  background: radial-gradient(circle at 50% 38%, rgba(255, 170, 40, .55), rgba(120, 50, 5, .85) 75%);
+  box-shadow: 0 4px 0 rgba(60, 25, 0, .9), 0 0 26px rgba(255, 180, 60, .45);
+}
+.tc-fire:active, .tc-fire.active {
+  background: radial-gradient(circle at 50% 38%, rgba(255, 220, 120, .8), rgba(150, 70, 10, .9) 75%);
+  color: #fff7d0;
+  box-shadow: 0 1px 0 rgba(60, 25, 0, .9), 0 0 34px rgba(255, 200, 80, .75);
+  transform: translateY(3px);
+}
+#game { touch-action: none; }
+
 </style>
 </head>
 <body>
@@ -765,6 +851,21 @@ kbd {
     <div class="scanlines" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
   </main>
+
+    <!-- ============ TOUCH CONTROLS (shown on coarse pointers) ============ -->
+    <div id="touch-ui" aria-hidden="true">
+      <div class="tc-dpad">
+        <button class="tc-btn tc-up" data-dir="0,-1" aria-label="上">▲</button>
+        <button class="tc-btn tc-left" data-dir="-1,0" aria-label="左">◀</button>
+        <button class="tc-btn tc-right" data-dir="1,0" aria-label="右">▶</button>
+        <button class="tc-btn tc-down" data-dir="0,1" aria-label="下">▼</button>
+      </div>
+      <div class="tc-actions">
+        <button class="tc-btn tc-mini" id="tc-pause" aria-label="ポーズ">❚❚</button>
+        <button class="tc-btn tc-mini tc-bgr" id="tc-shop" aria-label="ショップ">B</button>
+        <button class="tc-btn tc-fire" id="tc-fire" aria-label="ショット">FIRE</button>
+      </div>
+    </div>
 
   <footer id="controls-bar">
     <span class="ctrl"><kbd>←↑↓→</kbd> 移動</span>
@@ -3407,6 +3508,33 @@ window.addEventListener('keydown', (ev) => {
 window.addEventListener('keyup', (ev) => {
   if (SHOOT_KEYS.has(ev.code)) keys.shoot = false;
 });
+
+// ---------------------------------------------------------------- touch controls
+// On-screen D-pad + action buttons (visible only on coarse-pointer devices via CSS).
+const touchUI = document.getElementById('touch-ui');
+if (touchUI && typeof touchUI.querySelectorAll === 'function') {
+  const hold = (el, onDown, onUp) => {
+    const start = (ev) => { ev.preventDefault(); if (el.setPointerCapture && ev.pointerId !== undefined) { try { el.setPointerCapture(ev.pointerId); } catch { /* noop */ } } onDown(); };
+    const end = (ev) => { ev.preventDefault(); onUp(); };
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', end);
+    el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  };
+  touchUI.querySelectorAll('[data-dir]').forEach((btn) => {
+    const [x, y] = btn.dataset.dir.split(',').map(Number);
+    const on = () => { if (state.player) state.player.nextDir = { x, y }; btn.classList.add('active'); };
+    const off = () => { btn.classList.remove('active'); };
+    hold(btn, on, off);
+  });
+  const fireBtn = document.getElementById('tc-fire');
+  if (fireBtn) hold(fireBtn, () => { keys.shoot = true; fireBtn.classList.add('active'); }, () => { keys.shoot = false; fireBtn.classList.remove('active'); });
+  const shopBtn = document.getElementById('tc-shop');
+  if (shopBtn) shopBtn.addEventListener('click', (ev) => { ev.preventDefault(); toggleShop(); });
+  const pauseBtn = document.getElementById('tc-pause');
+  if (pauseBtn) pauseBtn.addEventListener('click', (ev) => { ev.preventDefault(); togglePause(); });
+}
 
 function togglePause() {
   if (state.mode !== 'play') return;
