@@ -888,6 +888,8 @@ function chooseRLDir(c, tx, ty) {
   let pool = options.filter(o => !o.isRev);
   if (!pool.length) pool = options;
   const learn = c.learn;
+  const lineup = rlLineupTarget(c); // prefer turning to face a shootable enemy
+  const ltx = lineup ? Math.floor(lineup.x / TILE) : 0, lty = lineup ? Math.floor(lineup.y / TILE) : 0;
   let best = null, bestScore = -Infinity;
   for (const o of pool) {
     const nx = tx + o.dx, ny = ty + o.dy;
@@ -897,6 +899,11 @@ function chooseRLDir(c, tx, ty) {
     else if (state.grid.pellets[pi] === 1) s += learn.pellet * 3.3;
     const dE = nearestEnemyDist(tileCX(nx), tileCY(ny));
     if (dE !== Infinity) s += learn.aggro * Math.max(0, 16 - dE);
+    // face the shootable enemy when we are on its row/column (like a player lining up)
+    if (lineup) {
+      if (lty === ty && o.dy === 0 && o.dx === Math.sign(ltx - tx)) s += learn.aggro * 7;
+      else if (ltx === tx && o.dx === 0 && o.dy === Math.sign(lty - ty)) s += learn.aggro * 7;
+    }
     s -= dangerAt(nx, ny) * learn.dodge * 22;
     if (c.dir && o.dx === c.dir.x && o.dy === c.dir.y) s += 1.6;
     if (s > bestScore) { bestScore = s; best = o; }
@@ -904,7 +911,9 @@ function chooseRLDir(c, tx, ty) {
   c.dir = best ? { x: best.dx, y: best.dy } : { x: 0, y: 0 };
 }
 
-function rlLineTarget(c) {
+// Any-direction lineup check — used so the clone tends to FACE a shootable
+// enemy (like a human lining up the shot), never to fire out of line.
+function rlLineupTarget(c) {
   const ex = Math.floor(c.x / TILE), ey = Math.floor(c.y / TILE);
   let best = null, bestD = Infinity;
   for (const e of state.enemies) {
@@ -912,8 +921,36 @@ function rlLineTarget(c) {
     const tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
     if (ex !== tx && ey !== ty) continue;
     const d = Math.abs(ex - tx) + Math.abs(ey - ty);
-    if (d > 9 || d >= bestD) continue;
+    if (d > 9 || d < 1 || d >= bestD) continue;
     if (losClear(ex, ey, tx, ty)) { best = e; bestD = d; }
+  }
+  return best;
+}
+
+// Strict fire-on-target: only an enemy in the clone's FACING direction,
+// same row/column, in line of sight — identical constraint to the human player.
+function rlLineTarget(c) {
+  const ex = Math.floor(c.x / TILE), ey = Math.floor(c.y / TILE);
+  const d = c.dir;
+  if (!d || (d.x === 0 && d.y === 0)) return null;
+  let best = null, bestD = Infinity;
+  for (const e of state.enemies) {
+    if (e.dead || e.graceT > 0.35) continue;
+    const tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
+    let dist;
+    if (d.x !== 0) {
+      if (ty !== ey) continue;
+      const s = Math.sign(tx - ex);
+      if (s !== d.x) continue;
+      dist = Math.abs(tx - ex);
+    } else {
+      if (tx !== ex) continue;
+      const s = Math.sign(ty - ey);
+      if (s !== d.y) continue;
+      dist = Math.abs(ty - ey);
+    }
+    if (dist > 9 || dist >= bestD) continue;
+    if (losClear(ex, ey, tx, ty)) { best = e; bestD = dist; }
   }
   return best;
 }
@@ -950,20 +987,19 @@ function updateRLClone(c, dt) {
   // straight shots only — your clone knows your rule
   c.fireCd -= dt;
   if (c.fireCd <= 0) {
-    const tgt = rlLineTarget(c);
+    const tgt = rlLineTarget(c); // only when FACING it — like the human player
     if (tgt) {
-      const dx = Math.sign(Math.floor(tgt.x / TILE) - Math.floor(c.x / TILE));
-      const dy = Math.sign(Math.floor(tgt.y / TILE) - Math.floor(c.y / TILE));
+      const d = c.dir;
       const power = state.powerT > 0;
       state.bullets.push({
-        x: c.x + dx * 14, y: c.y + dy * 14,
-        vx: dx * 430, vy: dy * 430,
+        x: c.x + d.x * 14, y: c.y + d.y * 14,
+        vx: d.x * 430, vy: d.y * 430,
         r: power ? 6 : 4.5, dmg: power ? 2 : 1,
         from: 'clone', hue: c.hue, power, life: 2.2,
       });
       c.fireCd = power ? 0.3 : 0.5;
       audio.shoot();
-      state.particles.push({ x: c.x + dx * 15, y: c.y + dy * 15, vx: dx * 60, vy: dy * 60, life: 0.12, maxLife: 0.12, size: 2.6, color: `hsl(${c.hue} 90% 75%)` });
+      state.particles.push({ x: c.x + d.x * 15, y: c.y + d.y * 15, vx: d.x * 60, vy: d.y * 60, life: 0.12, maxLife: 0.12, size: 2.6, color: `hsl(${c.hue} 90% 75%)` });
     }
   }
 }

@@ -385,6 +385,38 @@ step(60 * 3); // intro + Pac-Man spawn
 }
 
 console.log('');
+console.log('— RL / copyme clones only shoot where they face —');
+window.__cloneman.startGame('copyme');
+step(110);
+state.player.invT = 9999;
+state.enemies.length = 0; state.spawnQueue.length = 0;
+step(3);
+step(60 * 5); // → round 2 with one self-learning clone
+assert(state.clones.length === 1 && state.clones[0].rl, 'copyme clone is an always-on pseudo-player');
+{
+  const TI = 32;
+  const c = state.clones[0];
+  c.respawnT = 0; c.fade = 0; c.fireCd = 0;
+  const enemy = {
+    ...makeChaser(12 * TI + 16, 8 * TI + 16, 'rl-facing-target'),
+    dir: { x: 0, y: 1 }, speed: 0, thinkT: 999, fireCd: 999, graceT: 0,
+  };
+  state.enemies.push(enemy);
+  // facing AWAY from the aligned enemy — must NOT shoot
+  c.x = 8 * TI + 16; c.y = 8 * TI + 16;
+  c.dir = { x: -1, y: 0 }; c.thinkT = 999; c.fireCd = 0;
+  const b0 = state.bullets.length;
+  step(20);
+  assert(state.bullets.length === b0, 'clone does NOT shoot at an enemy behind it (faces matter)');
+  // facing TOWARD the aligned enemy — must shoot, along its facing axis
+  c.dir = { x: 1, y: 0 }; c.fireCd = 0;
+  step(3);
+  assert(state.bullets.length > b0, 'clone shoots the aligned enemy while facing it');
+  const fb = state.bullets[state.bullets.length - 1];
+  assert(fb.vx > 0 && fb.vy === 0, 'clone bullet flies along the facing direction');
+}
+
+console.log('');
 console.log('');
 if (failures > 0) {
   console.error(`SMOKE TEST FAILED: ${failures} assertion(s) failed`);
