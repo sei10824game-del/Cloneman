@@ -17,6 +17,9 @@ const DT = 1 / 60;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const CLONE_HUES = [187, 262, 24, 130, 330, 160, 205, 280, 95, 0, 45, 310];
 const CLONE_MAX_LIVES = 3;
+const RL_COST = 300;
+const GOLD_PER_CLEAR = (round) => 120 + 80 * (round - 1);
+const GOLD_PER_KILL = 4;
 
 // ---------------------------------------------------------------- HUD refs
 const hud = {
@@ -26,8 +29,13 @@ const hud = {
   lives: document.getElementById('hud-lives'),
   clones: document.getElementById('hud-clones'),
   enemies: document.getElementById('hud-enemies'),
+  gold: document.getElementById('hud-gold'),
   power: document.getElementById('hud-power'),
 };
+const shopEl = document.getElementById('shop');
+const shopGoldEl = document.getElementById('shop-gold');
+const shopListEl = document.getElementById('shop-clone-list');
+const shopCostEl = document.getElementById('shop-cost');
 const bannerEl = document.getElementById('banner');
 const bannerTitle = document.getElementById('banner-title');
 const bannerSub = document.getElementById('banner-sub');
@@ -37,6 +45,7 @@ const overlayPause = document.getElementById('overlay-pause');
 const finalScore = document.getElementById('final-score');
 const finalRound = document.getElementById('final-round');
 const finalBest = document.getElementById('final-best');
+const finalGold = document.getElementById('final-gold');
 const titleHi = document.getElementById('title-hi');
 
 // ---------------------------------------------------------------- state
@@ -62,12 +71,18 @@ const state = {
   introT: 0,
   clearT: 0,
   recordings: [],
-  rec: { frames: [], shots: [], deaths: [] },
+  rec: { frames: [], shots: [], deaths: [], stats: { pellets: 0, power: 0, kills: 0, deaths: 0 } },
+  gold: 0,
+  shopOpen: false,
   distField: null,
   distFieldT: 0,
 };
 
 try { state.hi = parseInt(localStorage.getItem('cloneman_hiscore') || '0', 10) || 0; } catch { state.hi = 0; }
+try { state.gold = parseInt(localStorage.getItem('cloneman_gold') || '0', 10) || 0; } catch { state.gold = 0; }
+function saveGold() {
+  try { localStorage.setItem('cloneman_gold', String(state.gold)); } catch { /* ignore */ }
+}
 
 const clampTile = (v, m) => Math.max(0, Math.min(m - 1, v));
 const tileOf = (e) => ({ tx: clampTile(Math.floor(e.x / TILE), COLS), ty: clampTile(Math.floor(e.y / TILE), ROWS) });
@@ -178,12 +193,18 @@ function makeClone(rec, i) {
     y: rec.frames[0].y,
     dirX: rec.frames[0].dx,
     dirY: rec.frames[0].dy,
+    dir: { x: rec.frames[0].dx, y: rec.frames[0].dy },
     mouth: 0,
     power: false,
     lives: CLONE_MAX_LIVES,
     respawnT: 0,     // >0 → regrouping at the start (invisible, untargetable)
     fade: 0,         // >0 → fading out after running out of lives at replay end
     alpha: 0.62,
+    r: 10.5,
+    rl: !!rec.rl,          // reinforcement-learned pseudo-player?
+    learn: rec.learn || null,
+    fireCd: 0.3,
+    thinkT: 0,
   };
 }
 
@@ -216,7 +237,7 @@ function setupRound(n) {
   state.spawnQueue = comp.map((type, i) => ({ type, delay: 0.6 + i * 0.7 }));
 
   // fresh recording for this round
-  state.rec = { frames: [], shots: [], deaths: [] };
+  state.rec = { frames: [], shots: [], deaths: [], stats: { pellets: 0, power: 0, kills: 0, deaths: 0 } };
   state.distField = null;
   state.distFieldT = 0;
 
@@ -248,10 +269,13 @@ function startGame() {
 
 function clearRound() {
   const bonus = 500 * state.round;
+  const goldGain = GOLD_PER_CLEAR(state.round);
   state.score += bonus;
+  state.gold += goldGain;
+  saveGold();
   // store this round's replay (cap 12 recordings; oldest drops off)
   if (state.rec.frames.length > 0) {
-    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [] });
+    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [], stats: state.rec.stats });
     if (state.recordings.length > 12) state.recordings.shift();
   }
   state.bullets = [];
@@ -261,7 +285,7 @@ function clearRound() {
   state.clearT = 2.8;
   saveHi();
   audio.roundClear();
-  showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}ボーナス — このラウンドの自分がクローンになる`, 2.6);
+  showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — このラウンドの自分がクローンになる`, 2.6);
   burst(state.player.x, state.player.y, 26, '#ffd83d', 190);
   hudUpdate();
 }
@@ -281,6 +305,7 @@ function gameOver() {
   finalScore.textContent = String(state.score);
   finalRound.textContent = String(state.round);
   finalBest.textContent = String(state.hi);
+  if (finalGold) finalGold.textContent = String(state.gold);
   setTimeout(() => overlayOver.classList.remove('hidden'), 650);
 }
 
@@ -304,8 +329,17 @@ function resetCloneReplay(c) {
   addPopup(c.x, c.y, `R${c.roundNo} 残機-1`, `hsl(${c.hue} 90% 75%)`, 13);
   c.f = 0;
   c.shotIdx = 0;
-  c.x = c.rec.frames[0].x; c.y = c.rec.frames[0].y;
-  c.dirX = c.rec.frames[0].dx; c.dirY = c.rec.frames[0].dy;
+  if (c.rl) {
+    // pseudo-player regroups at the arena start
+    const sp = state.grid.playerSpawn;
+    c.x = tileCX(sp.x); c.y = tileCY(sp.y);
+    c.dir = { x: -1, y: 0 }; c.nextDir = { x: -1, y: 0 };
+    c.thinkT = 0;
+  } else {
+    c.x = c.rec.frames[0].x; c.y = c.rec.frames[0].y;
+    c.dirX = c.rec.frames[0].dx; c.dirY = c.rec.frames[0].dy;
+    c.dir = { x: c.rec.frames[0].dx, y: c.rec.frames[0].dy };
+  }
   c.respawnT = 0.6; // brief regrouping beat; untargetable while regrouping
 }
 
@@ -326,6 +360,7 @@ function hitPlayer() {
   if (p.invT > 0 || state.mode !== 'play') return;
   // stamp the death frame so clones can re-enact it in later rounds
   if (state.rec && state.rec.deaths) state.rec.deaths.push(Math.max(0, state.rec.frames.length - 1));
+  if (state.rec && state.rec.stats) state.rec.stats.deaths++;
   state.lives--;
   audio.playerHit();
   state.shakeT = Math.max(state.shakeT, 0.55);
@@ -424,6 +459,9 @@ function damageEnemy(e, dmg, hitX, hitY) {
   e.flashT = 0.14;
   if (e.hp <= 0) {
     state.score += e.score;
+    state.gold += GOLD_PER_KILL;
+    if (state.rec.stats) state.rec.stats.kills++;
+    saveGold();
     addPopup(e.x, e.y, `+${e.score}`, '#ffe95a', 16);
     burst(e.x, e.y, e.type === 'tank' ? 22 : 14, e.color, e.type === 'tank' ? 230 : 175);
     audio.enemyDie();
@@ -516,6 +554,10 @@ function updatePlayer(dt) {
   const tx = clampTile(Math.floor(p.x / TILE), COLS), ty = clampTile(Math.floor(p.y / TILE), ROWS);
   const pi = idx(tx, ty);
   const pellet = state.grid.pellets[pi];
+  if (state.rec.stats) {
+    if (pellet === 1) state.rec.stats.pellets++;
+    else if (pellet === 2) state.rec.stats.power++;
+  }
   if (pellet === 1) {
     state.grid.pellets[pi] = 0;
     state.score += 10;
@@ -548,6 +590,8 @@ function updateClones(dt) {
       c.respawnT -= dt;
       continue;
     }
+    // reinforcement-learned pseudo-player doesn't replay — it plays
+    if (c.rl) { updateRLClone(c, dt); continue; }
     c.f++;
     const frames = c.rec.frames;
     // time-up: consume a life and restart the loop — or fade away for good
@@ -588,6 +632,157 @@ function updateClones(dt) {
     }
   }
   state.clones = state.clones.filter(c => !c._done);
+}
+
+// ================= reinforcement-learned pseudo-player =================
+// Fit a clone's play-style parameters from its replay (this is the "learning"):
+// aggression ← shot rate, pellet greed ← pellets eaten, dodge instinct ← deaths.
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+function computeLearn(rec) {
+  const stats = rec.stats || { pellets: 0, power: 0, kills: 0, deaths: 0 };
+  const frames = Math.max(1, rec.frames.length);
+  const minutes = frames / 3600; // 60 Hz
+  const shotRate = rec.shots.length / Math.max(minutes, 0.05);
+  return {
+    aggro: 0.55 + 0.85 * clamp01(shotRate / 95),
+    pellet: 0.45 + 1.6 * clamp01(stats.pellets / 55),
+    dodge: 0.9 + 0.55 * clamp01(stats.deaths / 2),
+    aggroPct: Math.round(clamp01(shotRate / 95) * 100),
+    pelletPct: Math.round(clamp01(stats.pellets / 55) * 100),
+    dodgePct: Math.round(clamp01(stats.deaths / 2) * 100),
+    shotRate: Math.round(shotRate),
+    kills: stats.kills,
+    pellets: stats.pellets,
+    deaths: stats.deaths,
+  };
+}
+
+function attachRLToRecording(rec) {
+  rec.rl = true;
+  rec.learn = computeLearn(rec);
+  return rec.learn;
+}
+
+function nearestEnemyDist(x, y) {
+  let best = Infinity;
+  for (const e of state.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - x, e.y - y) / TILE;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+function dangerAt(tx, ty) {
+  const cxp = tileCX(tx), cyp = tileCY(ty);
+  let d = 0;
+  for (const e of state.enemies) {
+    if (e.dead || e.graceT > 0) continue;
+    const dd = dist(e.x, e.y, cxp, cyp);
+    const radius = TILE * 2.6;
+    if (dd < radius) d += clamp01(1 - dd / radius) * 1.5;
+  }
+  for (const b of state.ebullets) {
+    const len = Math.hypot(b.vx, b.vy) || 1;
+    const tox = cxp - b.x, toy = cyp - b.y;
+    const proj = (tox * b.vx + toy * b.vy) / len;
+    if (proj > 0 && proj < 170) {
+      const perp = Math.abs(tox * b.vy - toy * b.vx) / len;
+      if (perp < 15) d += 2.5;
+    }
+  }
+  return d;
+}
+
+function chooseRLDir(c, tx, ty) {
+  const options = [];
+  for (const [dx, dy] of DIRS) {
+    if (moveSolid(tx + dx, ty + dy)) continue;
+    const isRev = c.dir && dx === -c.dir.x && dy === -c.dir.y && (c.dir.x || c.dir.y);
+    options.push({ dx, dy, isRev });
+  }
+  let pool = options.filter(o => !o.isRev);
+  if (!pool.length) pool = options;
+  const learn = c.learn;
+  let best = null, bestScore = -Infinity;
+  for (const o of pool) {
+    const nx = tx + o.dx, ny = ty + o.dy;
+    let s = Math.random() * 0.6;
+    const pi = idx(nx, ny);
+    if (state.grid.pellets[pi] === 2) s += learn.pellet * 30;
+    else if (state.grid.pellets[pi] === 1) s += learn.pellet * 3.3;
+    const dE = nearestEnemyDist(tileCX(nx), tileCY(ny));
+    if (dE !== Infinity) s += learn.aggro * Math.max(0, 16 - dE);
+    s -= dangerAt(nx, ny) * learn.dodge * 22;
+    if (c.dir && o.dx === c.dir.x && o.dy === c.dir.y) s += 1.6;
+    if (s > bestScore) { bestScore = s; best = o; }
+  }
+  c.dir = best ? { x: best.dx, y: best.dy } : { x: 0, y: 0 };
+}
+
+function rlLineTarget(c) {
+  const ex = Math.floor(c.x / TILE), ey = Math.floor(c.y / TILE);
+  let best = null, bestD = Infinity;
+  for (const e of state.enemies) {
+    if (e.dead || e.graceT > 0.35) continue;
+    const tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
+    if (ex !== tx && ey !== ty) continue;
+    const d = Math.abs(ex - tx) + Math.abs(ey - ty);
+    if (d > 9 || d >= bestD) continue;
+    if (losClear(ex, ey, tx, ty)) { best = e; bestD = d; }
+  }
+  return best;
+}
+
+function updateRLClone(c, dt) {
+  const tx = Math.floor(c.x / TILE), ty = Math.floor(c.y / TILE);
+  c.thinkT -= dt;
+  if (c.thinkT <= 0 && Math.abs(c.x - tileCX(tx)) < 7 && Math.abs(c.y - tileCY(ty)) < 7) {
+    c.thinkT = 0.15 + Math.random() * 0.06;
+    chooseRLDir(c, tx, ty);
+  }
+  if (!c.dir) c.dir = { x: -1, y: 0 };
+  autoCenter(c, dt);
+  const spd = 176;
+  c.vx = c.dir.x * spd; c.vy = c.dir.y * spd;
+  c.blocked = false;
+  moveEntityAxis(c, dt);
+  c.mouth = (c.mouth || 0) + dt * 11;
+  // pseudo-player eats pellets just like you
+  const pi = idx(clampTile(tx, COLS), clampTile(ty, ROWS));
+  const pellet = state.grid.pellets[pi];
+  if (pellet === 1) {
+    state.grid.pellets[pi] = 0;
+    state.score += 10;
+    if (state.rec.stats) state.rec.stats.pellets++;
+  } else if (pellet === 2) {
+    state.grid.pellets[pi] = 0;
+    state.score += 50;
+    state.powerT = 6;
+    if (state.rec.stats) state.rec.stats.power++;
+    addPopup(c.x, c.y - 12, 'POWER!!', '#7dff6b', 15);
+    audio.power();
+  }
+  // straight shots only — your clone knows your rule
+  c.fireCd -= dt;
+  if (c.fireCd <= 0) {
+    const tgt = rlLineTarget(c);
+    if (tgt) {
+      const dx = Math.sign(Math.floor(tgt.x / TILE) - Math.floor(c.x / TILE));
+      const dy = Math.sign(Math.floor(tgt.y / TILE) - Math.floor(c.y / TILE));
+      const power = state.powerT > 0;
+      state.bullets.push({
+        x: c.x + dx * 14, y: c.y + dy * 14,
+        vx: dx * 430, vy: dy * 430,
+        r: power ? 6 : 4.5, dmg: power ? 2 : 1,
+        from: 'clone', hue: c.hue, power, life: 2.2,
+      });
+      c.fireCd = power ? 0.3 : 0.5;
+      audio.shoot();
+      state.particles.push({ x: c.x + dx * 15, y: c.y + dy * 15, vx: dx * 60, vy: dy * 60, life: 0.12, maxLife: 0.12, size: 2.6, color: `hsl(${c.hue} 90% 75%)` });
+    }
+  }
 }
 
 function spawnEnemy(type) {
@@ -797,6 +992,12 @@ function updateBullets(dt) {
 function tick(dt) {
   state.time += dt;
   if (state.shakeT > 0) state.shakeT -= dt;
+
+  // reinforcement-learning shop pauses the world, not the vibes
+  if (state.shopOpen) {
+    updateParticles(dt);
+    return;
+  }
 
   if (state.mode === 'title' || state.mode === 'over') {
     updateParticles(dt);
@@ -1012,13 +1213,16 @@ function drawPlayer(g, t) {
 }
 
 function drawClone(g, c) {
-  const fkAngle = c.dirX === 1 ? 0 : c.dirX === -1 ? Math.PI : c.dirY === 1 ? Math.PI / 2 : c.dirY === -1 ? -Math.PI / 2 : 0;
+  // RL clones are pseudo-players: read facing from c.dir, brighter rim, RL tag
+  const ddx = c.rl ? (c.dir ? c.dir.x : -1) : c.dirX;
+  const ddy = c.rl ? (c.dir ? c.dir.y : 0) : c.dirY;
+  const fkAngle = ddx === 1 ? 0 : ddx === -1 ? Math.PI : ddy === 1 ? Math.PI / 2 : ddy === -1 ? -Math.PI / 2 : 0;
   const mouth = 0.1 + Math.abs(Math.sin(c.mouth)) * 0.3 * Math.PI;
   const color = `hsl(${c.hue} 90% 62%)`;
   g.save();
-  g.globalAlpha = c.alpha;
-  g.shadowColor = color;
-  g.shadowBlur = 12;
+  g.globalAlpha = c.rl ? 0.96 : c.alpha;
+  g.shadowColor = c.rl ? '#ffffff' : color;
+  g.shadowBlur = c.rl ? 20 : 12;
   g.fillStyle = color;
   g.translate(c.x, c.y);
   g.rotate(fkAngle);
@@ -1027,14 +1231,20 @@ function drawClone(g, c) {
   g.arc(0, 0, 10.5, mouth, Math.PI * 2 - mouth);
   g.closePath();
   g.fill();
+  if (c.rl) {
+    g.shadowBlur = 0;
+    g.strokeStyle = 'rgba(255,255,255,0.92)';
+    g.lineWidth = 1.7;
+    g.stroke();
+  }
   g.restore();
   // round tag + lives pips
   g.save();
-  g.globalAlpha = Math.min(1, c.alpha + 0.15);
-  g.fillStyle = color;
+  g.globalAlpha = c.rl ? 1 : Math.min(1, c.alpha + 0.15);
+  g.fillStyle = c.rl ? '#b6ff9a' : color;
   g.font = 'bold 9px "Arial Black", Arial, sans-serif';
   g.textAlign = 'center';
-  g.fillText(`R${c.roundNo}`, c.x, c.y - 14);
+  g.fillText(c.rl ? `RL·${c.roundNo}` : `R${c.roundNo}`, c.x, c.y - 14);
   for (let i = 0; i < CLONE_MAX_LIVES; i++) {
     g.fillStyle = i < c.lives ? color : 'rgba(150,170,220,0.22)';
     g.beginPath();
@@ -1202,8 +1412,8 @@ function hudUpdate() {
   setText(hud.round, String(state.round));
   setText(hud.score, String(state.score));
   setText(hud.hi, String(Math.max(state.hi, state.score)));
-  // live clones on the field (destroyed ones vanish from the count)
   setText(hud.clones, String(state.clones.filter(c => !c._done && c.fade <= 0).length));
+  setText(hud.gold, String(state.gold));
   setText(hud.enemies, String(state.enemies.length + state.spawnQueue.length));
   const livesStr = String(Math.max(0, state.lives));
   if (hud.lives._n !== livesStr) {
@@ -1233,6 +1443,93 @@ function hideBanner() {
   bannerEl.classList.remove('show');
 }
 
+// ================= reinforcement-learning shop =================
+function openShop() {
+  if (state.mode !== 'play' && state.mode !== 'clear') return;
+  state.shopOpen = true;
+  overlayPause.classList.add('hidden');
+  renderShop();
+  shopEl.classList.remove('hidden');
+}
+function closeShop() {
+  state.shopOpen = false;
+  shopEl.classList.add('hidden');
+}
+function toggleShop() {
+  if (state.shopOpen) closeShop();
+  else openShop();
+}
+
+function renderShop() {
+  shopGoldEl.textContent = String(state.gold);
+  if (shopCostEl) shopCostEl.textContent = String(RL_COST);
+  shopListEl.innerHTML = '';
+  const recs = state.recordings;
+  if (!recs.length) {
+    shopListEl.innerHTML = '<div class="shop-empty">まだクローンがいません。<br>ラウンドをクリアすると、そのラウンドの自分がクローンとして記録されます。</div>';
+    return;
+  }
+  recs.forEach((rec, i) => {
+    const hue = CLONE_HUES[i % CLONE_HUES.length];
+    const stats = rec.stats || { pellets: 0, kills: 0, deaths: 0 };
+    const learn = rec.learn;
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    const info = document.createElement('div');
+    info.className = 'shop-info';
+    info.innerHTML =
+      `<b>ラウンド${rec.round}のクローン</b>` +
+      `<span>撃墜 ${stats.kills}体 ・ ペレット ${stats.pellets}個 ・ 死亡 ${stats.deaths}回</span>` +
+      (rec.rl && learn ? `<span class="shop-learn">学習済み — 攻撃性 ${learn.aggroPct}% ・ ペレット欲 ${learn.pelletPct}% ・ 回避本能 ${learn.dodgePct}%</span>` : '');
+    const chip = document.createElement('div');
+    chip.className = 'shop-chip' + (rec.rl ? ' rl' : '');
+    chip.style.setProperty('--hue', String(hue));
+    chip.textContent = rec.rl ? 'RL' : String(rec.round);
+    const btn = document.createElement('button');
+    btn.className = 'assign-btn';
+    if (rec.rl) {
+      btn.textContent = '擬似プレイヤー済み';
+      btn.disabled = true;
+      btn.classList.add('done');
+    } else if (state.gold < RL_COST) {
+      btn.textContent = `強化学習 ${RL_COST}G`;
+      btn.disabled = true;
+      btn.classList.add('poor');
+      btn.title = 'ゴールドが足りません';
+    } else {
+      btn.textContent = `強化学習 ${RL_COST}G`;
+      btn.addEventListener('click', () => buyRL(i));
+    }
+    row.appendChild(chip);
+    row.appendChild(info);
+    row.appendChild(btn);
+    shopListEl.appendChild(row);
+  });
+}
+
+function buyRL(i) {
+  const rec = state.recordings[i];
+  if (!rec || rec.rl || state.gold < RL_COST) return;
+  state.gold -= RL_COST;
+  saveGold();
+  attachRLToRecording(rec);
+  // if that clone is on the field right now, it awakens mid-round
+  for (const c of state.clones) {
+    if (c.rec === rec) {
+      c.rl = true;
+      c.learn = rec.learn;
+      c.fireCd = 0.15;
+      c.thinkT = 0;
+      c.fade = 0;
+      burst(c.x, c.y, 26, '#9dff70', 230);
+      addPopup(c.x, c.y, 'RL 覚醒!!', '#9dff70', 17);
+    }
+  }
+  audio.power();
+  renderShop();
+  hudUpdate();
+}
+
 // ---------------------------------------------------------------- input
 const keys = { shoot: false };
 const DIR_KEYS = {
@@ -1253,7 +1550,13 @@ window.addEventListener('keydown', (ev) => {
     return;
   }
   if (SHOOT_KEYS.has(code)) { keys.shoot = true; return; }
-  if (code === 'KeyP' || code === 'Escape') { togglePause(); return; }
+  if (code === 'KeyB') { toggleShop(); return; }
+  if (code === 'KeyP') { togglePause(); return; }
+  if (code === 'Escape') {
+    if (state.shopOpen) closeShop();
+    else togglePause();
+    return;
+  }
   if (code === 'KeyM') { audio.setMuted(!audio.muted); return; }
   if (code === 'Enter') {
     if (state.mode === 'title') { audio.ensure(); audio.uiStart(); startGame(); }
@@ -1321,4 +1624,4 @@ hudUpdate();
 requestAnimationFrame(frame);
 
 // debug / smoke-test handle (harmless in production; used by tools/smoke.mjs)
-window.__cloneman = { state, startGame, setupRound, togglePause };
+window.__cloneman = { state, startGame, setupRound, togglePause, buyRL, toggleShop };

@@ -27,6 +27,7 @@
         <div class="hud-metric"><span class="hud-label">HI-SCORE</span><span id="hud-hi" class="hud-value hud-hi">0</span></div>
         <div class="hud-metric"><span class="hud-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
         <div class="hud-metric"><span class="hud-label">CLONES</span><span id="hud-clones" class="hud-value neon-green">0</span></div>
+        <div class="hud-metric"><span class="hud-label">GOLD</span><span id="hud-gold" class="hud-value neon-gold">0</span></div>
       </div>
     </div>
 
@@ -69,6 +70,10 @@
             <span class="key-cluster"><kbd>M</kbd></span>
             <span class="howto-text">サウンド ON / OFF</span>
           </div>
+          <div class="howto-row">
+            <span class="key-cluster"><kbd>B</kbd></span>
+            <span class="howto-text">強化学習ショップ（好きなクローンを擬似プレイヤーに進化）</span>
+          </div>
         </div>
 
         <ul class="rules">
@@ -77,12 +82,33 @@
           <li>クローンは<b class="c-green">味方</b>（味方同士のダメージなし）で<b class="c-green">残機3つ</b>。被弾・再生終了で残機を1消費しスタート地点から立て直し、残機0で消滅</li>
           <li>リプレイ中の<b class="c-cyan">死亡→復活</b>もそのまま再演される（クローンは爆発→復活地点に再登場→戦闘再開）</li>
           <li>自機の弾は<b class="c-yellow">クールタイム長め</b>。クローンの弾との連携が生存のカギ</li>
+          <li>ラウンドクリアで<b class="c-yellow">ゴールド</b>獲得。<kbd>B</kbd>の<b class="c-yellow">強化学習ショップ</b>で購入し、好きなクローンを<b class="c-green">擬似プレイヤー</b>に進化させよう</li>
           <li>ラウンドが上がるごとに<b class="c-pink">敵が強く・多くなる</b>。橙のひびブロックは弾で破壊可能</li>
           <li>大きな<b class="c-green">パワーペレット</b>で一定時間パワーアップ（連射＆弾が巨大化・敵は逃げ惑う）</li>
         </ul>
 
         <button id="btn-start" class="btn-neon">GAME START</button>
         <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
+      </div>
+    </div>
+
+    <!-- ============ REINFORCEMENT-LEARNING SHOP ============ -->
+    <div id="shop" class="overlay hidden" role="dialog" aria-label="強化学習ショップ">
+      <div class="title-panel shop-panel">
+        <div class="shop-head">
+          <h2 class="shop-title">強化学習ショップ</h2>
+          <div class="gold-badge"><span class="gold-coin">G</span><span id="shop-gold">0</span></div>
+        </div>
+        <p class="shop-desc">
+          クローンに<b class="c-yellow">強化学習</b>を付与できます。あなたのプレイ記録から
+          <b>攻撃性・ペレット欲・回避本能</b>を推定して学習し、以後のクローンは単なるリプレイではなく、
+          状況を見て動く<b class="c-green">擬似プレイヤー</b>へ進化します。
+        </p>
+        <div id="shop-clone-list" class="shop-clone-list"></div>
+        <div class="shop-foot">
+          <span class="shop-cost">1体につき <b id="shop-cost">300</b> G</span>
+          <button id="shop-close" class="btn-neon shop-close-btn">とじる（B）</button>
+        </div>
       </div>
     </div>
 
@@ -95,6 +121,7 @@
           <div class="final-stat"><span class="hud-label">SCORE</span><span id="final-score" class="final-value">0</span></div>
           <div class="final-stat"><span class="hud-label">REACHED</span><span class="final-value">ROUND <span id="final-round">1</span></span></div>
           <div class="final-stat"><span class="hud-label">BEST</span><span id="final-best" class="final-value neon-cyan">0</span></div>
+          <div class="final-stat"><span class="hud-label">GOLD</span><span id="final-gold" class="final-value neon-gold">0</span></div>
         </div>
         <button id="btn-restart" class="btn-neon">RETRY — もう一度</button>
         <p class="title-hi">ENTER キーでもリトライできます</p>
@@ -118,6 +145,7 @@
     <span class="ctrl"><kbd>SPACE</kbd> 弾幕発射</span>
     <span class="ctrl"><kbd>P</kbd> ポーズ</span>
     <span class="ctrl"><kbd>M</kbd> ミュート</span>
+    <button id="btn-shop" class="ctrl ctrl-shop" type="button">🪙 <kbd>B</kbd> 強化学習ショップ</button>
     <span class="ctrl ctrl-clone">CLONES = クリアしたラウンドの自分が再演</span>
   </footer>
 </div>

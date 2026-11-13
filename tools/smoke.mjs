@@ -33,7 +33,7 @@ function makeCanvas() {
 function makeEl(tag) {
   const el = {
     tag, textContent: '', innerHTML: '', className: '',
-    style: {}, children: [], offsetWidth: 100,
+    style: { setProperty() {} }, children: [], offsetWidth: 100,
     _v: undefined, _n: undefined,
     classList: (() => {
       const set = new Set();
@@ -215,6 +215,44 @@ console.log('— time-up consumes a clone life and resets —');
   assert(c2.lives === livesBefore - 1, 'time-up consumed one clone life');
   assert(c2.f < 5, 'replay restarted from the beginning after time-up');
 }
+
+console.log('— gold & reinforcement-learning shop —');
+assert(state.gold >= 124, `gold awarded for round-clear + kills (got ${state.gold}G)`);
+assert(globalThis.localStorage.getItem('cloneman_gold') === String(state.gold), 'gold persisted to localStorage');
+
+const goldBefore = state.gold;
+state.gold = 100;
+window.__cloneman.buyRL(0); // not enough gold
+assert(!state.recordings[0].rl, 'purchase blocked when gold is insufficient');
+assert(state.gold === 100, 'no gold spent on a failed purchase');
+
+state.gold = goldBefore + 300;
+const goldFieldBefore = state.gold;
+window.__cloneman.buyRL(0);
+assert(state.gold === goldFieldBefore - 300, 'RL purchase deducted exactly 300G');
+assert(state.recordings[0].rl === true, 'recording marked as reinforcement-learned');
+assert(state.recordings[0].learn && state.recordings[0].learn.aggro > 0.5, `style parameters learned from replay (aggro=${state.recordings[0].learn ? state.recordings[0].learn.aggro.toFixed(2) : 'n/a'})`);
+assert(state.clones[0].rl === true, 'on-field clone awakened into a pseudo-player');
+assert(globalThis.localStorage.getItem('cloneman_gold') === String(state.gold), 'post-purchase gold persisted');
+
+console.log('— shop toggle via B key —');
+assert(state.shopOpen === false, 'shop starts closed');
+press('KeyB');
+assert(state.shopOpen === true, 'B opens the shop');
+press('KeyB');
+assert(state.shopOpen === false, 'B closes the shop');
+
+console.log('— RL pseudo-player plays autonomously —');
+state.powerT = 120; // keep ghosts frightened so the check is deterministic
+const rlClone = state.clones[0];
+rlClone.respawnT = 0;
+const rlx0 = rlClone.x, rly0 = rlClone.y, rframe0 = rlClone.f;
+step(90); // 1.5s
+const rlClone2 = state.clones[0];
+const drift = Math.hypot(rlClone2.x - rlx0, rlClone2.y - rly0);
+assert(drift > 15, `RL clone moves by itself (${drift.toFixed(0)}px in 1.5s)`);
+assert(rlClone2.f === rframe0, 'RL clone does not advance the replay cursor');
+assert(rlClone2.lives >= 1, 'RL clone still lives on the field');
 
 console.log('— clones are hunted like the player —');
 state.powerT = 0;
