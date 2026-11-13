@@ -137,7 +137,9 @@ state.enemies.push({
 });
 const scoreBefore = state.score;
 press('Space');
-step(20);
+step(1);
+assert(state.player.shootCd > 0.35, `player shot cooldown is long (~0.5s, got ${state.player.shootCd.toFixed(2)}s)`);
+step(19);
 release('Space');
 step(20);
 assert(!state.enemies.some(e => e.name === 'test-target'), 'test target destroyed by straight bullet');
@@ -173,10 +175,27 @@ assert(pellets2 > 100, 'pellets restored for round 2');
 assert(state.enemies.length + state.spawnQueue.length === 5, `round 2 roster = 5 (4 chasers + 1 speedy), got ${state.enemies.length + state.spawnQueue.length}`);
 
 console.log('— clone replays round 1 —');
+state.powerT = 60; // frightened ghosts wander harmlessly — deterministic replay check
 step(60 * 3);
 assert(state.clones.length === 1, 'clone still active');
 assert(state.clones[0].f > 0, `clone is replaying (frame ${state.clones[0].f})`);
 assert(state.clones[0].shotIdx > 0, `clone re-fired recorded shots (${state.clones[0].shotIdx})`);
+
+console.log('— clones are hunted like the player —');
+state.powerT = 0;
+if (state.clones.length === 0) {
+  failures++; console.error('  ✗ FAIL: clone missing before hunt test');
+} else {
+  const c = state.clones[0];
+  state.enemies.push({
+    type: 'chaser', x: c.x, y: c.y, vx: 0, vy: 0,
+    dir: { x: 1, y: 0 }, speed: 10, hp: 99, maxHp: 99, r: 11,
+    color: '#ff4a3d', score: 100, name: 'clone-hunter', flashT: 0,
+    thinkT: 999, fireCd: 99, graceT: 0, dead: false, blocked: false,
+  });
+  step(5);
+  assert(state.clones.length === 0, 'enemy contact destroys the clone (like the player)');
+}
 
 console.log('— player death & game over —');
 state.lives = 1;

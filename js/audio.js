@@ -99,6 +99,11 @@ export class AudioMan {
     this._tone(1046, 'sine', 0.07, 0.01, 0.18, 0, 1568);
   }
 
+  cloneDown() {
+    this._tone(760, 'sine', 0.09, 0.01, 0.22, 0, 170);
+    this._tone(360, 'triangle', 0.07, 0.01, 0.2, 0.07, 110);
+  }
+
   gameOver() {
     [392, 330, 262, 196].forEach((f, i) => this._tone(f, 'triangle', 0.12, 0.01, 0.32, i * 0.17));
   }

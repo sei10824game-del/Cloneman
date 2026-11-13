@@ -99,15 +99,22 @@ function circleHits(x, y, r, ignoreDestruct = false) {
   return false;
 }
 
-// BFS distance field from target tile (used by ghosts to path toward player)
+// BFS distance field from ALL friendly targets at once (player + active clones).
+// Multi-source BFS: every friendly tile starts at distance 0, so enemies naturally
+// descend the gradient toward their nearest prey — player and clones alike.
 function computeDistField() {
   const d = new Int16Array(COLS * ROWS).fill(-1);
+  const q = [];
+  const pushTarget = (x, y) => {
+    const i = idx(x, y);
+    if (d[i] === -1) { d[i] = 0; q.push(i); }
+  };
   const p = state.player;
-  const sx = clampTile(Math.floor(p.x / TILE), COLS);
-  const sy = clampTile(Math.floor(p.y / TILE), ROWS);
-  const start = idx(sx, sy);
-  d[start] = 0;
-  const q = [start];
+  pushTarget(clampTile(Math.floor(p.x / TILE), COLS), clampTile(Math.floor(p.y / TILE), ROWS));
+  for (const c of state.clones) {
+    if (c._done || c.fade > 0) continue;
+    pushTarget(clampTile(Math.floor(c.x / TILE), COLS), clampTile(Math.floor(c.y / TILE), ROWS));
+  }
   let head = 0;
   while (head < q.length) {
     const cur = q[head++];
@@ -274,6 +281,16 @@ function gameOver() {
   setTimeout(() => overlayOver.classList.remove('hidden'), 650);
 }
 
+// Clone got caught by an enemy — it fights beside you, but it can die like you
+function destroyClone(c) {
+  if (c._done) return;
+  c._done = true;
+  const col = `hsl(${c.hue} 90% 62%)`;
+  burst(c.x, c.y, 20, col, 210);
+  addPopup(c.x, c.y, `R${c.roundNo} ダウン…`, `hsl(${c.hue} 90% 72%)`, 14);
+  audio.cloneDown();
+}
+
 // Player got hit: lose a life, everyone retreats to the ghost house
 function hitPlayer() {
   const p = state.player;
@@ -341,7 +358,7 @@ function firePlayerBullet() {
     r: power ? 6 : 4.5, dmg: power ? 2 : 1,
     from: 'player', hue: 52, power, life: 2.2,
   });
-  p.shootCd = power ? 0.15 : 0.26;
+  p.shootCd = power ? 0.3 : 0.5; // クールタイム長め — クローンとの連携が主軸になる
   audio.shoot();
   // record for the clone replay (frame index = frames.length - 1, pushed this tick)
   if (state.rec.frames.length > 0 && state.rec.frames.length <= 60 * 60 * 6) {
@@ -358,9 +375,8 @@ function fireCloneShot(clone, shot) {
   });
 }
 
-function fireEnemyBullet(e) {
-  const p = state.player;
-  const dx = p.x - e.x, dy = p.y - e.y;
+function fireEnemyBullet(e, target) {
+  const dx = target.x - e.x, dy = target.y - e.y;
   const len = Math.hypot(dx, dy) || 1;
   state.ebullets.push({
     x: e.x, y: e.y, vx: (dx / len) * 225, vy: (dy / len) * 225,
@@ -564,20 +580,33 @@ function chooseGhostDir(e) {
   if (chosen.dx !== 0) e.y += (cy - e.y) * 0.75; else e.x += (cx - e.x) * 0.75;
 }
 
-function hasLineOfFire(e) {
-  const p = state.player;
-  const ex = Math.floor(e.x / TILE), ey = Math.floor(e.y / TILE);
-  const px = Math.floor(p.x / TILE), py = Math.floor(p.y / TILE);
-  if (ex !== px && ey !== py) return false;
-  if (Math.abs(ex - px) + Math.abs(ey - py) > 9) return false;
-  const dx = Math.sign(px - ex), dy = Math.sign(py - ey);
+function losClear(ex, ey, tx, ty) {
+  const dx = Math.sign(tx - ex), dy = Math.sign(ty - ey);
   let cx = ex, cy = ey;
   for (let i = 0; i < 12; i++) {
     cx += dx; cy += dy;
-    if (cx === px && cy === py) return true;
+    if (cx === tx && cy === ty) return true;
     if (isWall(cx, cy) || isDestruct(cx, cy)) return false;
   }
   return false;
+}
+
+// pick the nearest friendly target (player or clone) in straight line-of-fire
+function shooterLineTarget(e) {
+  const ex = Math.floor(e.x / TILE), ey = Math.floor(e.y / TILE);
+  const targets = [state.player];
+  for (const c of state.clones) {
+    if (!c._done && c.fade <= 0) targets.push(c);
+  }
+  let best = null, bestD = Infinity;
+  for (const t of targets) {
+    const tx = Math.floor(t.x / TILE), ty = Math.floor(t.y / TILE);
+    if (ex !== tx && ey !== ty) continue;
+    const d = Math.abs(ex - tx) + Math.abs(ey - ty);
+    if (d > 9 || d >= bestD) continue;
+    if (losClear(ex, ey, tx, ty)) { best = t; bestD = d; }
+  }
+  return best;
 }
 
 function updateEnemies(dt) {
@@ -615,16 +644,23 @@ function updateEnemies(dt) {
     e.blocked = false;
     moveEntityAxis(e, dt);
 
-    // shooter: fire when it has a clear straight line to the player
-    if (e.type === 'shooter' && !frightened && e.fireCd <= 0 && e.graceT <= 0 && hasLineOfFire(e)) {
-      fireEnemyBullet(e);
-      e.fireCd = 2.7;
+    // shooter: fire when it has a clear straight line to any friendly target (player or clone)
+    if (e.type === 'shooter' && !frightened && e.fireCd <= 0 && e.graceT <= 0) {
+      const tgt = shooterLineTarget(e);
+      if (tgt) {
+        fireEnemyBullet(e, tgt);
+        e.fireCd = 2.7;
+      }
     }
 
-    // contact with player
+    // contact with player or clones (clones are hunted just like the player)
     const p = state.player;
-    if (e.graceT <= 0 && p.invT <= 0 && !frightened) {
-      if (dist(e.x, e.y, p.x, p.y) < e.r + p.r - 1) hitPlayer();
+    if (e.graceT <= 0 && !frightened) {
+      if (p.invT <= 0 && dist(e.x, e.y, p.x, p.y) < e.r + p.r - 1) hitPlayer();
+      for (const c of state.clones) {
+        if (c._done || c.fade > 0) continue;
+        if (dist(e.x, e.y, c.x, c.y) < e.r + 10.5 - 1) destroyClone(c);
+      }
     }
   }
   state.enemies = state.enemies.filter(e => !e.dead);
@@ -679,6 +715,16 @@ function updateBullets(dt) {
     if (p.invT <= 0 && dist(b.x, b.y, p.x, p.y) < b.r + p.r - 1) {
       b.life = 0;
       hitPlayer();
+      continue;
+    }
+    // enemy fire also destroys clones
+    for (const c of state.clones) {
+      if (c._done || c.fade > 0) continue;
+      if (dist(b.x, b.y, c.x, c.y) < b.r + 10.5) {
+        b.life = 0;
+        destroyClone(c);
+        break;
+      }
     }
   }
   state.ebullets = state.ebullets.filter(b => b.life > 0);
@@ -1068,7 +1114,7 @@ function render(t) {
   drawDestructibles(ctx);
   drawPellets(ctx, t);
 
-  for (const c of state.clones) drawClone(ctx, c);
+  for (const c of state.clones) { if (!c._done) drawClone(ctx, c); }
   for (const e of state.enemies) drawGhost(ctx, e, t);
   drawPlayer(ctx, t);
   drawBullets(ctx);
@@ -1086,7 +1132,8 @@ function hudUpdate() {
   setText(hud.round, String(state.round));
   setText(hud.score, String(state.score));
   setText(hud.hi, String(Math.max(state.hi, state.score)));
-  setText(hud.clones, String(state.recordings.length));
+  // live clones on the field (destroyed ones vanish from the count)
+  setText(hud.clones, String(state.clones.filter(c => !c._done && c.fade <= 0).length));
   setText(hud.enemies, String(state.enemies.length + state.spawnQueue.length));
   const livesStr = String(Math.max(0, state.lives));
   if (hud.lives._n !== livesStr) {
