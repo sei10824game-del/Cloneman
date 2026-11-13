@@ -473,7 +473,8 @@ kbd {
         <ul class="rules">
           <li><b class="c-yellow">敵を全滅</b>させるとラウンドクリア — 壊れた地形と敵がリセットされ、次のラウンドへ</li>
           <li>クリアしたラウンドの<b class="c-cyan">自分がクローンとして同じ動きを再現</b>し、弾も撃ってくれる</li>
-          <li>クローンは<b class="c-green">味方</b>（味方同士のダメージなし）— ただし<b class="c-pink">敵はクローンも襲い、被弾したクローンは消滅</b>する</li>
+          <li>クローンは<b class="c-green">味方</b>（味方同士のダメージなし）で<b class="c-green">残機3つ</b>。被弾・再生終了で残機を1消費しスタート地点から立て直し、残機0で消滅</li>
+          <li>リプレイ中の<b class="c-cyan">死亡→復活</b>もそのまま再演される（クローンは爆発→復活地点に再登場→戦闘再開）</li>
           <li>自機の弾は<b class="c-yellow">クールタイム長め</b>。クローンの弾との連携が生存のカギ</li>
           <li>ラウンドが上がるごとに<b class="c-pink">敵が強く・多くなる</b>。橙のひびブロックは弾で破壊可能</li>
           <li>大きな<b class="c-green">パワーペレット</b>で一定時間パワーアップ（連射＆弾が巨大化・敵は逃げ惑う）</li>
@@ -728,6 +729,7 @@ const audio = new AudioMan();
 const DT = 1 / 60;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const CLONE_HUES = [187, 262, 24, 130, 330, 160, 205, 280, 95, 0, 45, 310];
+const CLONE_MAX_LIVES = 3;
 
 // ---------------------------------------------------------------- HUD refs
 const hud = {
@@ -773,7 +775,7 @@ const state = {
   introT: 0,
   clearT: 0,
   recordings: [],
-  rec: { frames: [], shots: [] },
+  rec: { frames: [], shots: [], deaths: [] },
   distField: null,
   distFieldT: 0,
 };
@@ -824,7 +826,7 @@ function computeDistField() {
   const p = state.player;
   pushTarget(clampTile(Math.floor(p.x / TILE), COLS), clampTile(Math.floor(p.y / TILE), ROWS));
   for (const c of state.clones) {
-    if (c._done || c.fade > 0) continue;
+    if (c._done || c.fade > 0 || c.respawnT > 0) continue;
     pushTarget(clampTile(Math.floor(c.x / TILE), COLS), clampTile(Math.floor(c.y / TILE), ROWS));
   }
   let head = 0;
@@ -891,7 +893,9 @@ function makeClone(rec, i) {
     dirY: rec.frames[0].dy,
     mouth: 0,
     power: false,
-    fade: 0,        // >0 → fading out after replay ends
+    lives: CLONE_MAX_LIVES,
+    respawnT: 0,     // >0 → regrouping at the start (invisible, untargetable)
+    fade: 0,         // >0 → fading out after running out of lives at replay end
     alpha: 0.62,
   };
 }
@@ -925,7 +929,7 @@ function setupRound(n) {
   state.spawnQueue = comp.map((type, i) => ({ type, delay: 0.6 + i * 0.7 }));
 
   // fresh recording for this round
-  state.rec = { frames: [], shots: [] };
+  state.rec = { frames: [], shots: [], deaths: [] };
   state.distField = null;
   state.distFieldT = 0;
 
@@ -960,7 +964,7 @@ function clearRound() {
   state.score += bonus;
   // store this round's replay (cap 12 recordings; oldest drops off)
   if (state.rec.frames.length > 0) {
-    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots });
+    state.recordings.push({ round: state.round, frames: state.rec.frames, shots: state.rec.shots, deaths: state.rec.deaths || [] });
     if (state.recordings.length > 12) state.recordings.shift();
   }
   state.bullets = [];
@@ -993,20 +997,48 @@ function gameOver() {
   setTimeout(() => overlayOver.classList.remove('hidden'), 650);
 }
 
-// Clone got caught by an enemy — it fights beside you, but it can die like you
-function destroyClone(c) {
+// Clone got caught by an enemy — it fights beside you and dies like you:
+// loses one life and restarts its replay; at zero lives it's gone for good.
+function cloneDied(c) {
   if (c._done) return;
-  c._done = true;
-  const col = `hsl(${c.hue} 90% 62%)`;
-  burst(c.x, c.y, 20, col, 210);
-  addPopup(c.x, c.y, `R${c.roundNo} ダウン…`, `hsl(${c.hue} 90% 72%)`, 14);
+  c.lives -= 1;
+  burst(c.x, c.y, 22, `hsl(${c.hue} 90% 62%)`, 220);
   audio.cloneDown();
+  resetCloneReplay(c);
+}
+
+// restart a clone's replay from the beginning (at zero lives → gone for good)
+function resetCloneReplay(c) {
+  if (c.lives <= 0) {
+    addPopup(c.x, c.y, `R${c.roundNo} ロスト`, `hsl(${c.hue} 90% 72%)`, 14);
+    c._done = true;
+    return;
+  }
+  addPopup(c.x, c.y, `R${c.roundNo} 残機-1`, `hsl(${c.hue} 90% 75%)`, 13);
+  c.f = 0;
+  c.shotIdx = 0;
+  c.x = c.rec.frames[0].x; c.y = c.rec.frames[0].y;
+  c.dirX = c.rec.frames[0].dx; c.dirY = c.rec.frames[0].dy;
+  c.respawnT = 0.6; // brief regrouping beat; untargetable while regrouping
+}
+
+// re-enact a death that was recorded in the original run — pure choreography, no life cost
+function cloneReplayDeath(c) {
+  const frames = c.rec.frames;
+  burst(c.x, c.y, 16, `hsl(${c.hue} 90% 62%)`, 200);
+  audio.cloneDown();
+  addPopup(c.x, c.y, `R${c.roundNo} 復活!`, `hsl(${c.hue} 90% 78%)`, 13);
+  c.f = Math.min(c.f + 1, frames.length - 1); // next frames hold the recorded respawn position
+  c.x = frames[c.f].x; c.y = frames[c.f].y;
+  c.respawnT = 0.6; // explode, vanish for a beat, reappear at the recorded respawn point
 }
 
 // Player got hit: lose a life, everyone retreats to the ghost house
 function hitPlayer() {
   const p = state.player;
   if (p.invT > 0 || state.mode !== 'play') return;
+  // stamp the death frame so clones can re-enact it in later rounds
+  if (state.rec && state.rec.deaths) state.rec.deaths.push(Math.max(0, state.rec.frames.length - 1));
   state.lives--;
   audio.playerHit();
   state.shakeT = Math.max(state.shakeT, 0.55);
@@ -1018,7 +1050,7 @@ function hitPlayer() {
     gameOver();
     return;
   }
-  // respawn player, send surviving ghosts back to the house (staggered)
+  // respawn player, send surviving ghosts back to the house (keep unborn ones queued!)
   const sp = state.grid.playerSpawn;
   p.x = tileCX(sp.x); p.y = tileCY(sp.y);
   p.dir = { x: -1, y: 0 }; p.nextDir = { x: -1, y: 0 };
@@ -1026,7 +1058,10 @@ function hitPlayer() {
   const alive = state.enemies.map(e => e.type);
   state.enemies = [];
   state.ebullets = [];
-  state.spawnQueue = alive.map((t, i) => ({ type: t, delay: 0.9 + i * 0.55 }));
+  state.spawnQueue = [
+    ...state.spawnQueue,
+    ...alive.map((t, i) => ({ type: t, delay: 0.9 + i * 0.55 })),
+  ];
   hudUpdate();
 }
 
@@ -1213,15 +1248,45 @@ function updatePlayer(dt) {
 function updateClones(dt) {
   const t = state.time;
   for (const c of state.clones) {
-    if (c.fade > 0 || c._done) {
+    if (c._done) continue;
+    // fading out (ran out of lives at replay end)
+    if (c.fade > 0) {
       c.fade -= dt * 1.3;
       c.alpha = Math.max(0, 0.62 * Math.max(0, c.fade));
       if (c.fade <= 0) c._done = true;
       continue;
     }
+    // regrouping at the start after a reset — invisible & untargetable
+    if (c.respawnT > 0) {
+      c.respawnT -= dt;
+      continue;
+    }
     c.f++;
     const frames = c.rec.frames;
-    if (c.f >= frames.length) { c.fade = 1; continue; }
+    // time-up: consume a life and restart the loop — or fade away for good
+    if (c.f >= frames.length) {
+      c.lives -= 1;
+      if (c.lives > 0) {
+        c.f = 0;
+        c.shotIdx = 0;
+        c.x = frames[0].x; c.y = frames[0].y;
+        c.dirX = frames[0].dx; c.dirY = frames[0].dy;
+        c.respawnT = 0.5;
+        burst(c.x, c.y, 10, `hsl(${c.hue} 90% 70%)`, 130);
+        addPopup(c.x, c.y, `R${c.roundNo} リセット 残機-1`, `hsl(${c.hue} 90% 75%)`, 12);
+      } else {
+        c.lives = 0;
+        c.fade = 1;
+      }
+      continue;
+    }
+    // re-enact a death that was recorded during the original run
+    const deaths = c.rec.deaths || [];
+    let replayDeath = false;
+    for (const d of deaths) {
+      if (d === c.f) { cloneReplayDeath(c); replayDeath = true; break; }
+    }
+    if (replayDeath) continue;
     const fk = frames[c.f];
     c.x = fk.x; c.y = fk.y;
     c.dirX = fk.dx; c.dirY = fk.dy;
@@ -1308,7 +1373,7 @@ function shooterLineTarget(e) {
   const ex = Math.floor(e.x / TILE), ey = Math.floor(e.y / TILE);
   const targets = [state.player];
   for (const c of state.clones) {
-    if (!c._done && c.fade <= 0) targets.push(c);
+    if (!c._done && c.fade <= 0 && c.respawnT <= 0) targets.push(c);
   }
   let best = null, bestD = Infinity;
   for (const t of targets) {
@@ -1370,8 +1435,8 @@ function updateEnemies(dt) {
     if (e.graceT <= 0 && !frightened) {
       if (p.invT <= 0 && dist(e.x, e.y, p.x, p.y) < e.r + p.r - 1) hitPlayer();
       for (const c of state.clones) {
-        if (c._done || c.fade > 0) continue;
-        if (dist(e.x, e.y, c.x, c.y) < e.r + 10.5 - 1) destroyClone(c);
+        if (c._done || c.fade > 0 || c.respawnT > 0) continue;
+        if (dist(e.x, e.y, c.x, c.y) < e.r + 10.5 - 1) cloneDied(c);
       }
     }
   }
@@ -1431,10 +1496,10 @@ function updateBullets(dt) {
     }
     // enemy fire also destroys clones
     for (const c of state.clones) {
-      if (c._done || c.fade > 0) continue;
+      if (c._done || c.fade > 0 || c.respawnT > 0) continue;
       if (dist(b.x, b.y, c.x, c.y) < b.r + 10.5) {
         b.life = 0;
-        destroyClone(c);
+        cloneDied(c);
         break;
       }
     }
@@ -1676,13 +1741,19 @@ function drawClone(g, c) {
   g.closePath();
   g.fill();
   g.restore();
-  // round tag
+  // round tag + lives pips
   g.save();
   g.globalAlpha = Math.min(1, c.alpha + 0.15);
   g.fillStyle = color;
   g.font = 'bold 9px "Arial Black", Arial, sans-serif';
   g.textAlign = 'center';
   g.fillText(`R${c.roundNo}`, c.x, c.y - 14);
+  for (let i = 0; i < CLONE_MAX_LIVES; i++) {
+    g.fillStyle = i < c.lives ? color : 'rgba(150,170,220,0.22)';
+    g.beginPath();
+    g.arc(c.x - ((CLONE_MAX_LIVES - 1) * 7) / 2 + i * 7, c.y - 22, 2.1, 0, Math.PI * 2);
+    g.fill();
+  }
   g.restore();
 }
 
@@ -1826,7 +1897,7 @@ function render(t) {
   drawDestructibles(ctx);
   drawPellets(ctx, t);
 
-  for (const c of state.clones) { if (!c._done) drawClone(ctx, c); }
+  for (const c of state.clones) { if (!c._done && c.respawnT <= 0) drawClone(ctx, c); }
   for (const e of state.enemies) drawGhost(ctx, e, t);
   drawPlayer(ctx, t);
   drawBullets(ctx);

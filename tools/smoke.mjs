@@ -1,6 +1,7 @@
 // Headless smoke test for CLONEMAN.
 // Stubs just enough DOM/canvas to run the real game loop in Node,
-// then drives actual gameplay: start → shoot → clear round → clone replay → game over.
+// then drives actual gameplay: start → shoot → death → clear round → clone replay
+// (incl. re-enacted death) → clone lives & reset rules → game over → restart.
 const elements = new Map();
 
 function makeCtx() {
@@ -110,6 +111,12 @@ function assert(cond, label) {
 }
 
 const TI = 32;
+const makeChaser = (x, y, name) => ({
+  type: 'chaser', x, y, vx: 0, vy: 0,
+  dir: { x: 1, y: 0 }, speed: 10, hp: 99, maxHp: 99, r: 11,
+  color: '#ff4a3d', score: 100, name, flashT: 0,
+  thinkT: 999, fireCd: 99, graceT: 0, dead: false, blocked: false,
+});
 
 console.log('— boot & title —');
 step(5);
@@ -126,14 +133,11 @@ state.player.invT = 9999; // deterministic soak: contact cannot kill the player
 
 console.log('— straight-line shot (records into replay) —');
 step(105); // burn intro (1.6s = 96 ticks) + a few play ticks
-// park a stationary target on the open middle corridor (row 8, cols 7..17)
 state.player.x = 7 * TI + 16; state.player.y = 8 * TI + 16;
 state.player.dir = { x: 1, y: 0 }; state.player.nextDir = { x: 1, y: 0 };
 state.enemies.push({
-  type: 'chaser', x: 11 * TI + 16, y: 8 * TI + 16, vx: 0, vy: 0,
-  dir: { x: 0, y: -1 }, speed: 0, hp: 1, maxHp: 1, r: 11,
-  color: '#ff4a3d', score: 100, name: 'test-target', flashT: 0,
-  thinkT: 999, fireCd: 99, graceT: 0, dead: false, blocked: false,
+  ...makeChaser(11 * TI + 16, 8 * TI + 16, 'test-target'),
+  dir: { x: 0, y: -1 }, speed: 0, hp: 1, maxHp: 1,
 });
 const scoreBefore = state.score;
 press('Space');
@@ -147,8 +151,20 @@ assert(state.score > scoreBefore, 'score increased after kill');
 assert(state.rec.shots.length >= 1, 'shot recorded into round replay buffer');
 
 console.log('— ghost-house spawning —');
-step(180); // remaining spawn delays (0.6 / 1.3 / 2.0s from play start)
+step(180); // remaining spawn delays
 assert(state.enemies.length + state.spawnQueue.length === 3, `round-1 roster intact: 3 chasers (got ${state.enemies.length + state.spawnQueue.length})`);
+
+console.log('— death & respawn get recorded for clones —');
+state.lives = 3;
+state.player.invT = 0;
+state.enemies.push(makeChaser(state.player.x, state.player.y, 'death-recorder'));
+step(5);
+assert(state.lives === 2, 'losing a life on hit');
+assert(state.rec.deaths.length === 1, 'death frame stamped into the recording');
+assert(Math.abs(state.player.x - (12 * TI + 16)) < 40 && Math.abs(state.player.y - (15 * TI + 16)) < 40, 'player respawned at start point');
+assert(state.enemies.length + state.spawnQueue.length === 4, 'unborn ghosts survive a player death (3 + test chaser)');
+state.enemies.length = 0; state.spawnQueue.length = 0; // clean slate for the forced clear
+state.player.invT = 9999;
 
 console.log('— pellets & power pellets —');
 let pellets = 0, power = 0;
@@ -165,47 +181,59 @@ step(3);
 assert(state.mode === 'clear', 'clearing all enemies triggers round clear');
 assert(state.recordings.length === 1, 'round recording saved for clone');
 assert(state.recordings[0].frames.length > 0, `recording contains frames (${state.recordings[0].frames.length})`);
+assert(state.recordings[0].deaths.length === 1, 'recording carries the death stamp');
 step(60 * 5); // clearT (2.8s) then round-2 intro (1.6s)
 assert(state.round === 2, 'advanced to round 2');
 assert(state.mode === 'play', 'round 2 in play');
 assert(state.clones.length === 1, 'clone from round 1 joined');
+assert(state.clones[0].lives === 3, 'clone enters with 3 lives');
 assert(state.grid.destruct.size === destructBefore, 'destructible terrain fully restored');
 let pellets2 = 0; for (const v of state.grid.pellets) if (v) pellets2++;
 assert(pellets2 > 100, 'pellets restored for round 2');
 assert(state.enemies.length + state.spawnQueue.length === 5, `round 2 roster = 5 (4 chasers + 1 speedy), got ${state.enemies.length + state.spawnQueue.length}`);
 
-console.log('— clone replays round 1 —');
+console.log('— clone replays round 1 incl. death & respawn —');
 state.powerT = 60; // frightened ghosts wander harmlessly — deterministic replay check
-step(60 * 3);
-assert(state.clones.length === 1, 'clone still active');
+let seenAt = -1;
+for (let i = 0; i < 60 * 8 && seenAt === -1; i++) {
+  step(1);
+  for (const c of state.clones) if (c.respawnT > 0) { seenAt = c.f; break; }
+}
+assert(seenAt !== -1, `clone re-enacted the recorded death (exploded near frame ${seenAt}; recorded at ${state.recordings[0].deaths[0]})`);
+assert(state.clones.length === 1 && state.clones[0].lives === 3, 're-enacted death costs no clone lives');
 assert(state.clones[0].f > 0, `clone is replaying (frame ${state.clones[0].f})`);
 assert(state.clones[0].shotIdx > 0, `clone re-fired recorded shots (${state.clones[0].shotIdx})`);
 
+console.log('— time-up consumes a clone life and resets —');
+{
+  const c = state.clones[0];
+  c.f = c.rec.frames.length - 2;
+  c.respawnT = 0; c.fade = 0;
+  const livesBefore = c.lives;
+  step(3);
+  const c2 = state.clones[0];
+  assert(c2.lives === livesBefore - 1, 'time-up consumed one clone life');
+  assert(c2.f < 5, 'replay restarted from the beginning after time-up');
+}
+
 console.log('— clones are hunted like the player —');
 state.powerT = 0;
-if (state.clones.length === 0) {
-  failures++; console.error('  ✗ FAIL: clone missing before hunt test');
-} else {
+let guard = 0;
+while (state.clones.length > 0 && guard++ < 6) {
   const c = state.clones[0];
-  state.enemies.push({
-    type: 'chaser', x: c.x, y: c.y, vx: 0, vy: 0,
-    dir: { x: 1, y: 0 }, speed: 10, hp: 99, maxHp: 99, r: 11,
-    color: '#ff4a3d', score: 100, name: 'clone-hunter', flashT: 0,
-    thinkT: 999, fireCd: 99, graceT: 0, dead: false, blocked: false,
-  });
-  step(5);
-  assert(state.clones.length === 0, 'enemy contact destroys the clone (like the player)');
+  c.respawnT = 0; // skip the regroup beat for the test
+  state.enemies.push(makeChaser(c.x, c.y, 'clone-hunter'));
+  step(3);
 }
+assert(state.clones.length === 0, 'clone vanished after losing all of its lives');
+
+console.log('— difficulty scaling —');
+assert(state.enemies.length + state.spawnQueue.length >= 5, 'round 2 enemy count > round 1');
 
 console.log('— player death & game over —');
 state.lives = 1;
 state.player.invT = 0;
-state.enemies.push({
-  type: 'chaser', x: state.player.x, y: state.player.y, vx: 0, vy: 0,
-  dir: { x: 1, y: 0 }, speed: 10, hp: 99, maxHp: 99, r: 11,
-  color: '#ff4a3d', score: 100, name: 'test-killer', flashT: 0,
-  thinkT: 999, fireCd: 99, graceT: 0, dead: false, blocked: false,
-});
+state.enemies.push(makeChaser(state.player.x, state.player.y, 'test-killer'));
 step(5);
 assert(state.mode === 'over', 'losing last life ends the game');
 assert(globalThis.localStorage.getItem('cloneman_hiscore') !== null, 'hi-score persisted');
