@@ -510,3 +510,14 @@ kbd {
   color: #2b0733;
 }
 .mode-ghost:hover { box-shadow: 0 0 34px rgba(255, 110, 199, 0.7), 0 6px 0 #5b1c86; }
+
+/* ============ COPY ME: 自立学習モード ============ */
+.mode-copy {
+  background: linear-gradient(180deg, #8dff6e, #16b94f);
+  box-shadow: 0 0 24px rgba(141, 255, 110, 0.45), 0 6px 0 #14532d;
+  color: #052e12;
+}
+.mode-copy:hover { box-shadow: 0 0 34px rgba(141, 255, 110, 0.7), 0 6px 0 #14532d; }
+.mode-copyme .hud-gold-metric,
+.mode-copyme .final-gold-stat,
+.mode-copyme .ctrl-shop { display: none !important; }

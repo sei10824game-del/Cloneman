@@ -80,6 +80,7 @@ const state = {
   rec: { frames: [], shots: [], deaths: [], stats: { pellets: 0, power: 0, kills: 0, deaths: 0 } },
   gold: 0,
   shopOpen: false,
+  model: null,
   distField: null,
   distFieldT: 0,
   pelletField: null,
@@ -284,6 +285,14 @@ function setupRound(n) {
     if (rec.frames.length > 0) state.clones.push(makeClone(rec, i));
   });
 
+  // COPY ME: no shop, no purchase — every clone is an always-on pseudo-player,
+  // retrained from the cumulative run history at the start of every round.
+  if (state.gameMode === 'copyme') {
+    const model = computeCumulativeLearn(state.recordings);
+    state.model = model;
+    for (const c of state.clones) { c.rl = true; c.learn = model; c.fireCd = 0.2; c.thinkT = 0; }
+  }
+
   if (state.gameMode === 'ghost') {
     // enemy mode: a genius Pac-Man (or several) stalks the maze — you are the ghost.
     // deaths advance the round; defeating Pac-Man adds one more next round.
@@ -314,6 +323,13 @@ function setupRound(n) {
       showBanner(`ROUND ${n}`, `パックマン ×${state.pacCount} ／ クローン ×${state.clones.length} 参戦`, 1.5);
       audio.cloneSpawn();
     }
+  } else if (state.gameMode === 'copyme') {
+    if (n === 1) {
+      showBanner('COPY ME', 'あなたの全記録から毎ラウンド再学習する分身が参戦する', 1.7);
+    } else {
+      showBanner(`ROUND ${n}`, `クローン ×${state.clones.length} — 全員が最新モデル（${state.model ? state.model.trainedAt : 0}フレーム学習）に再学習済み`, 1.5);
+      audio.cloneSpawn();
+    }
   } else if (n === 1) {
     showBanner('ROUND 1', '敵をぜんぶ倒せ！ スペースで直線弾', 1.5);
   } else {
@@ -324,7 +340,8 @@ function setupRound(n) {
 }
 
 function startGame(mode) {
-  state.gameMode = mode === 'ghost' ? 'ghost' : 'player';
+  state.gameMode = (mode === 'ghost' || mode === 'copyme') ? mode : 'player';
+  try { document.body.classList.toggle('mode-copyme', state.gameMode === 'copyme'); } catch { /* ignore */ }
   state.pacCount = 1;
   state.score = 0;
   state.lives = 3;
@@ -351,8 +368,7 @@ function clearRound() {
   const bonus = 500 * state.round;
   const goldGain = GOLD_PER_CLEAR(state.round);
   state.score += bonus;
-  state.gold += goldGain;
-  saveGold();
+  if (state.gameMode !== 'copyme') { state.gold += goldGain; saveGold(); }
   pushRecording();
   state.bullets = [];
   state.ebullets = [];
@@ -368,6 +384,9 @@ function clearRound() {
   if (state.gameMode === 'ghost') {
     showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — 次のラウンドはパックマン×${state.pacCount}体`, 2.6);
     burst(state.player.x, state.player.y, 26, '#3ae2ff', 190);
+  } else if (state.gameMode === 'copyme') {
+    showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 — 全クローンが最新の自分を再学習して出撃`, 2.6);
+    burst(state.player.x, state.player.y, 26, '#8dff6e', 190);
   } else {
     showBanner(`ROUND ${state.round} CLEAR!`, `+${bonus}点 ＋${goldGain}G — このラウンドの自分がクローンになる`, 2.6);
     burst(state.player.x, state.player.y, 26, '#ffd83d', 190);
@@ -567,9 +586,13 @@ function damageEnemy(e, dmg, hitX, hitY) {
   e.flashT = 0.14;
   if (e.hp <= 0) {
     state.score += e.score;
-    state.gold += GOLD_PER_KILL;
-    if (state.rec.stats) state.rec.stats.kills++;
-    saveGold();
+    if (state.gameMode !== 'copyme') {
+      state.gold += GOLD_PER_KILL;
+      if (state.rec.stats) state.rec.stats.kills++;
+      saveGold();
+    } else if (state.rec.stats) {
+      state.rec.stats.kills++;
+    }
     addPopup(e.x, e.y, `+${e.score}`, '#ffe95a', 16);
     burst(e.x, e.y, e.type === 'tank' ? 22 : 14, e.color, e.type === 'tank' ? 230 : 175);
     audio.enemyDie();
@@ -793,6 +816,35 @@ function attachRLToRecording(rec) {
   rec.rl = true;
   rec.learn = computeLearn(rec);
   return rec.learn;
+}
+
+// COPY ME mode: retrain the shared model from the FULL run history, every round.
+// The more you play, the sharper every clone's instincts become.
+function computeCumulativeLearn(recs) {
+  let kills = 0, pellets = 0, deaths = 0, shots = 0, frames = 0;
+  for (const rec of recs) {
+    const s = rec.stats || { pellets: 0, power: 0, kills: 0, deaths: 0 };
+    kills += s.kills | 0;
+    pellets += s.pellets | 0;
+    deaths += s.deaths | 0;
+    shots += (rec.shots || []).length;
+    frames += (rec.frames || []).length;
+  }
+  const minutes = Math.max(frames / 3600, 0.05); // 60 Hz
+  const shotRate = shots / minutes;
+  return {
+    aggro: 0.55 + 0.85 * clamp01(shotRate / 95),
+    pellet: 0.45 + 1.6 * clamp01(pellets / 55),
+    dodge: 0.9 + 0.55 * clamp01(deaths / 2),
+    aggroPct: Math.round(clamp01(shotRate / 95) * 100),
+    pelletPct: Math.round(clamp01(pellets / 55) * 100),
+    dodgePct: Math.round(clamp01(deaths / 2) * 100),
+    shotRate: Math.round(shotRate),
+    kills,
+    pellets,
+    deaths,
+    trainedAt: frames, // dataset size — grows every round
+  };
 }
 
 function nearestEnemyDist(x, y) {
@@ -1853,6 +1905,7 @@ function hideBanner() {
 
 // ================= reinforcement-learning shop =================
 function openShop() {
+  if (state.gameMode === 'copyme') return; // COPY ME has no shop — clones are all self-learning
   if (state.mode !== 'play' && state.mode !== 'clear') return;
   state.shopOpen = true;
   overlayPause.classList.add('hidden');
@@ -1923,7 +1976,8 @@ function renderShop() {
 
 function buyRL(i) {
   const rec = state.recordings[i];
-  if (!rec || rec.rl || rec.mode === 'ghost' || state.gold < RL_COST) return;
+  if (state.gameMode === 'copyme') return;
+  if (!rec || rec.rl || rec.mode === 'ghost' || rec.mode === 'copyme' || state.gold < RL_COST) return;
   state.gold -= RL_COST;
   saveGold();
   attachRLToRecording(rec);
@@ -2003,6 +2057,12 @@ const btnGhost = document.getElementById('btn-ghost-mode');
 if (btnGhost) {
   btnGhost.addEventListener('click', () => {
     audio.ensure(); audio.uiStart(); startGame('ghost');
+  });
+}
+const btnCopyme = document.getElementById('btn-copyme-mode');
+if (btnCopyme) {
+  btnCopyme.addEventListener('click', () => {
+    audio.ensure(); audio.uiStart(); startGame('copyme');
   });
 }
 

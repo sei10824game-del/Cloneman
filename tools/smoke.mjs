@@ -327,6 +327,45 @@ assert(state.round === roundB + 1, 'death advances the round in enemy mode');
 assert(state.clones.length >= 1, 'the dead run reborn as a ghost clone');
 
 console.log('');
+console.log('— copy me mode: 自立学習クローン —');
+window.__cloneman.startGame('copyme');
+assert(state.gameMode === 'copyme', 'copyme mode selected');
+assert(state.mode === 'play' && state.round === 1, 'copyme starts at round 1');
+const goldAtStart = state.gold;
+step(110);
+state.player.invT = 9999;
+state.enemies.length = 0; state.spawnQueue.length = 0; // force round-1 clear
+step(3);
+assert(state.mode === 'clear', 'round 1 cleared in copyme');
+assert(state.gold === goldAtStart, 'copyme has no gold economy (shop-less)');
+step(60 * 5); // clearT + intro → round 2
+assert(state.round === 2 && state.clones.length === 1, 'clone joins for round 2');
+assert(state.clones[0].rl === true, 'every clone is an always-on pseudo-player — no purchase needed');
+assert(state.clones[0].learn && state.clones[0].learn.trainedAt > 0, `clone carries the retrained model (trainedAt=${state.clones[0].learn ? state.clones[0].learn.trainedAt : 0} frames)`);
+assert(state.model && state.model.trainedAt > 0, 'cumulative model trained from full history');
+
+{
+  const c0 = state.clones[0];
+  c0.respawnT = 0;
+  const px = c0.x, py = c0.y, f0 = c0.f;
+  step(90);
+  const c1 = state.clones[0];
+  assert(Math.hypot(c1.x - px, c1.y - py) > 15, 'copyme clone moves by itself');
+  assert(c1.f === f0, 'copyme clone never replays frames');
+}
+
+press('KeyB');
+assert(state.shopOpen === false, 'B key does nothing in copyme (no shop)');
+window.__cloneman.buyRL(0);
+assert(state.gold === goldAtStart, 'buying RL is impossible in copyme');
+
+state.enemies.length = 0; state.spawnQueue.length = 0; // force round-2 clear
+step(3);
+step(60 * 6); // clearT + intro → round 3
+assert(state.round === 3 && state.clones.length === 2, 'round 3 fields two self-learning clones');
+assert(state.model.trainedAt >= (state.recordings[0].frames.length + state.recordings[1].frames.length), 'model retrained on ALL accumulated history each round');
+
+console.log('');
 console.log('');
 if (failures > 0) {
   console.error(`SMOKE TEST FAILED: ${failures} assertion(s) failed`);

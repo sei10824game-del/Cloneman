@@ -27,7 +27,7 @@
         <div class="hud-metric"><span class="hud-label">HI-SCORE</span><span id="hud-hi" class="hud-value hud-hi">0</span></div>
         <div class="hud-metric"><span class="hud-label" id="hud-enemies-label">ENEMIES</span><span id="hud-enemies" class="hud-value neon-pink">0</span></div>
         <div class="hud-metric"><span class="hud-label">CLONES</span><span id="hud-clones" class="hud-value neon-green">0</span></div>
-        <div class="hud-metric"><span class="hud-label">GOLD</span><span id="hud-gold" class="hud-value neon-gold">0</span></div>
+        <div class="hud-metric hud-gold-metric"><span class="hud-label">GOLD</span><span id="hud-gold" class="hud-value neon-gold">0</span></div>
       </div>
     </div>
 
@@ -97,9 +97,19 @@
           </ul>
         </div>
 
+        <div class="enemy-mode-rules">
+          <div class="enemy-mode-heading">🧬 コピーミー — 自立学習モード</div>
+          <ul class="rules">
+            <li><b class="c-green">すべてのクローンが常に自立学習済み</b>。リプレイ再生ではなく、その場の状況を見て動く完全自律の分身</li>
+            <li><b class="c-yellow">毎ラウンド、あなたの全プレイ履歴から全クローンが再学習</b>する。ラウンドを重ねるほど分身は賢くなる</li>
+            <li><b class="c-yellow">強化学習ショップは不要（存在しない）</b>。ゴールドの概念もこのモードにはない</li>
+          </ul>
+        </div>
+
         <div class="mode-select">
           <button id="btn-start" class="btn-neon mode-btn">プレイヤーモード<small>過去の自分と共闘する弾幕シューティング</small></button>
           <button id="btn-ghost-mode" class="btn-neon mode-btn mode-ghost">敵モード — 天敵ゴースト<small>プログラムされた天才パックマンを狩る</small></button>
+          <button id="btn-copyme-mode" class="btn-neon mode-btn mode-copy">コピーミー — 自立学習<small>全クローンが毎ラウンド全履歴から再学習する分身</small></button>
         </div>
         <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
       </div>
@@ -134,7 +144,7 @@
           <div class="final-stat"><span class="hud-label">SCORE</span><span id="final-score" class="final-value">0</span></div>
           <div class="final-stat"><span class="hud-label">REACHED</span><span class="final-value">ROUND <span id="final-round">1</span></span></div>
           <div class="final-stat"><span class="hud-label">BEST</span><span id="final-best" class="final-value neon-cyan">0</span></div>
-          <div class="final-stat"><span class="hud-label">GOLD</span><span id="final-gold" class="final-value neon-gold">0</span></div>
+          <div class="final-stat final-gold-stat"><span class="hud-label">GOLD</span><span id="final-gold" class="final-value neon-gold">0</span></div>
         </div>
         <button id="btn-restart" class="btn-neon">RETRY — もう一度</button>
         <p class="title-hi">ENTER キーでもリトライできます</p>
