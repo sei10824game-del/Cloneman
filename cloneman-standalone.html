@@ -783,7 +783,7 @@ kbd {
           <div class="enemy-mode-heading">🧬 コピーミー — 自立学習モード</div>
           <ul class="rules">
             <li><b class="c-green">すべてのクローンが常に自立学習済み</b>。リプレイ再生ではなく、その場の状況を見て動く完全自律の分身</li>
-            <li><b class="c-yellow">毎ラウンド、あなたの全プレイ履歴から全クローンが再学習</b>する。ラウンドを重ねるほど分身は賢くなる</li>
+            <li><b class="c-yellow">ラウンドをクリアするたびに、そのラウンドのあなたの動きだけで強化学習したクローンが生成される</b>。既存のクローンは生まれた時のモデルを持ち続ける</li>
             <li><b class="c-yellow">強化学習ショップは不要（存在しない）</b>。ゴールドの概念もこのモードにはない</li>
           </ul>
         </div>
@@ -791,7 +791,7 @@ kbd {
         <div class="mode-select">
           <button id="btn-start" class="btn-neon mode-btn">プレイヤーモード<small>過去の自分と共闘する弾幕シューティング</small></button>
           <button id="btn-ghost-mode" class="btn-neon mode-btn mode-ghost">敵モード — 天敵ゴースト<small>通常プレイと同じルールで動く天才パックマンを狩る</small></button>
-          <button id="btn-copyme-mode" class="btn-neon mode-btn mode-copy">コピーミー — 自立学習<small>全クローンが毎ラウンド全履歴から再学習する分身</small></button>
+          <button id="btn-copyme-mode" class="btn-neon mode-btn mode-copy">コピーミー — 自立学習<small>クリアしたラウンドの動きで学習した分身が参戦する</small></button>
         </div>
         <p class="title-hi">HI-SCORE: <span id="title-hi">0</span></p>
       </div>
@@ -1150,7 +1150,6 @@ const state = {
   rec: { frames: [], shots: [], deaths: [], stats: { pellets: 0, power: 0, kills: 0, deaths: 0 } },
   gold: 0,
   shopOpen: false,
-  model: null,
   distField: null,
   distFieldT: 0,
   pelletField: null,
@@ -1376,12 +1375,14 @@ function setupRound(n) {
     if (rec.frames.length > 0) state.clones.push(makeClone(rec, i));
   });
 
-  // COPY ME: no shop, no purchase — every clone is an always-on pseudo-player,
-  // retrained from the cumulative run history at the start of every round.
+  // COPY ME: no shop, no purchase — every clone is an always-on pseudo-player
+  // trained on ITS OWN round's replay (not the cumulative history).
   if (state.gameMode === 'copyme') {
-    const model = computeCumulativeLearn(state.recordings);
-    state.model = model;
-    for (const c of state.clones) { c.rl = true; c.learn = model; c.fireCd = 0.2; c.thinkT = 0; }
+    for (const c of state.clones) {
+      c.rl = true;
+      c.learn = attachRLToRecording(c.rec); // this clone's round only — older clones keep their birth model
+      c.fireCd = 0.2; c.thinkT = 0;
+    }
   }
 
   if (state.gameMode === 'ghost') {
@@ -1416,9 +1417,9 @@ function setupRound(n) {
     }
   } else if (state.gameMode === 'copyme') {
     if (n === 1) {
-      showBanner('COPY ME', 'あなたの全記録から毎ラウンド再学習する分身が参戦する', 1.7);
+      showBanner('COPY ME', 'ラウンドをクリアするたび、そのラウンドの動きで学習したクローンが参戦する', 1.7);
     } else {
-      showBanner(`ROUND ${n}`, `クローン ×${state.clones.length} — 全員が最新モデル（${state.model ? state.model.trainedAt : 0}フレーム学習）に再学習済み`, 1.5);
+      showBanner(`ROUND ${n}`, `クローン ×${state.clones.length} — このラウンドの自分の動きで学習したクローンが参戦`, 1.5);
       audio.cloneSpawn();
     }
   } else if (n === 1) {
@@ -1957,6 +1958,7 @@ function computeLearn(rec) {
     kills: stats.kills,
     pellets: stats.pellets,
     deaths: stats.deaths,
+    trainedAt: frames, // size of THIS round's dataset — not cumulative
   };
 }
 
@@ -1966,34 +1968,6 @@ function attachRLToRecording(rec) {
   return rec.learn;
 }
 
-// COPY ME mode: retrain the shared model from the FULL run history, every round.
-// The more you play, the sharper every clone's instincts become.
-function computeCumulativeLearn(recs) {
-  let kills = 0, pellets = 0, deaths = 0, shots = 0, frames = 0;
-  for (const rec of recs) {
-    const s = rec.stats || { pellets: 0, power: 0, kills: 0, deaths: 0 };
-    kills += s.kills | 0;
-    pellets += s.pellets | 0;
-    deaths += s.deaths | 0;
-    shots += (rec.shots || []).length;
-    frames += (rec.frames || []).length;
-  }
-  const minutes = Math.max(frames / 3600, 0.05); // 60 Hz
-  const shotRate = shots / minutes;
-  return {
-    aggro: 0.55 + 0.85 * clamp01(shotRate / 95),
-    pellet: 0.45 + 1.6 * clamp01(pellets / 55),
-    dodge: 0.9 + 0.55 * clamp01(deaths / 2),
-    aggroPct: Math.round(clamp01(shotRate / 95) * 100),
-    pelletPct: Math.round(clamp01(pellets / 55) * 100),
-    dodgePct: Math.round(clamp01(deaths / 2) * 100),
-    shotRate: Math.round(shotRate),
-    kills,
-    pellets,
-    deaths,
-    trainedAt: frames, // dataset size — grows every round
-  };
-}
 
 function nearestEnemyDist(x, y) {
   let best = Infinity;

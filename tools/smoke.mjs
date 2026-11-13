@@ -344,8 +344,8 @@ assert(state.gold === goldAtStart, 'copyme has no gold economy (shop-less)');
 step(60 * 5); // clearT + intro → round 2
 assert(state.round === 2 && state.clones.length === 1, 'clone joins for round 2');
 assert(state.clones[0].rl === true, 'every clone is an always-on pseudo-player — no purchase needed');
-assert(state.clones[0].learn && state.clones[0].learn.trainedAt > 0, `clone carries the retrained model (trainedAt=${state.clones[0].learn ? state.clones[0].learn.trainedAt : 0} frames)`);
-assert(state.model && state.model.trainedAt > 0, 'cumulative model trained from full history');
+assert(state.clones[0].learn === state.recordings[0].learn, 'clone carries the model trained on ITS OWN round — not a shared model');
+assert(state.clones[0].learn.trainedAt === state.recordings[0].frames.length, `clone's dataset is its own round's replay (trainedAt=${state.clones[0].learn ? state.clones[0].learn.trainedAt : 0} frames)`);
 
 {
   const c0 = state.clones[0];
@@ -366,7 +366,8 @@ state.enemies.length = 0; state.spawnQueue.length = 0; // force round-2 clear
 step(3);
 step(60 * 6); // clearT + intro → round 3
 assert(state.round === 3 && state.clones.length === 2, 'round 3 fields two self-learning clones');
-assert(state.model.trainedAt >= (state.recordings[0].frames.length + state.recordings[1].frames.length), 'model retrained on ALL accumulated history each round');
+assert(state.clones[0].learn === state.recordings[0].learn && state.clones[1].learn === state.recordings[1].learn, 'every copyme clone is trained on its own round only');
+assert(state.clones[0].learn.trainedAt === state.recordings[0].frames.length, 'round-1 clone keeps its own birth model (no cumulative retrain)');
 
 console.log('');
 console.log('— enemy mode: Pac-Man fights back like the normal player —');
